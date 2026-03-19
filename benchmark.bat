@@ -22,13 +22,13 @@ echo.
 echo ============================================
 echo [1/2] CUDA Stream Async Version
 echo ============================================
-build\bin\Release\yolo_stream_async.exe %ENGINE_PATH% %IMAGE_PATH% %ITERATIONS%
+build_nmake\bin\yolo_stream_async.exe %ENGINE_PATH% %IMAGE_PATH% %ITERATIONS%
 
 echo.
 echo ============================================
 echo [2/2] CUDA Graph Version
 echo ============================================
-build\bin\Release\yolo_cuda_graph.exe %ENGINE_PATH% %IMAGE_PATH% %ITERATIONS%
+build_nmake\bin\yolo_cuda_graph.exe %ENGINE_PATH% %IMAGE_PATH% %ITERATIONS%
 
 echo.
 echo ============================================

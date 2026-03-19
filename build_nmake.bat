@@ -18,7 +18,7 @@ if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 cd /d "%BUILD_DIR%"
 
 echo.
-echo [1/3] Running CMake configuration with NMake...
+echo [1/3] Running CMake configuration...
 cmake -G "NMake Makefiles" ^
     -DCMAKE_BUILD_TYPE=Release ^
     -DCMAKE_CUDA_ARCHITECTURES=75;86;89 ^
@@ -63,6 +63,11 @@ echo.
 echo ========================================
 echo Build completed successfully!
 echo Output: %BIN_DIR%
+echo ========================================
+echo.
+echo Usage:
+echo   %BIN_DIR%\yolo_cuda_graph.exe models\yolo11n-pose.engine test-img\bus.jpg
+echo   %BIN_DIR%\yolo_stream_async.exe models\yolo11n-pose.engine test-img\bus.jpg
 echo ========================================
 
 cd /d "%PROJECT_DIR%"

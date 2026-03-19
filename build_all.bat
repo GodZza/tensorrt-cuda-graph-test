@@ -25,7 +25,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo [Step 3/3] Building C++ executables...
-call build.bat
+call build_nmake.bat
 
 if %ERRORLEVEL% neq 0 (
     echo C++ build failed!
@@ -38,6 +38,6 @@ echo All steps completed successfully!
 echo ============================================
 echo.
 echo To run the demo:
-echo   Stream Async: build\bin\Release\yolo_stream_async.exe models\yolo11n-pose.engine test-img\bus.jpg 100
-echo   CUDA Graph:   build\bin\Release\yolo_cuda_graph.exe models\yolo11n-pose.engine test-img\bus.jpg 100
+echo   CUDA Graph:   build_nmake\bin\yolo_cuda_graph.exe models\yolo11n-pose.engine test-img\bus.jpg
+echo   Stream Async: build_nmake\bin\yolo_stream_async.exe models\yolo11n-pose.engine test-img\bus.jpg
 echo.
