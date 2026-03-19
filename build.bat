@@ -1,44 +1,66 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo ============================================
-echo YOLO11 Pose TensorRT Build Script
-echo ============================================
+set PROJECT_DIR=%~dp0
+set BUILD_DIR=%PROJECT_DIR%build
+set BIN_DIR=%BUILD_DIR%\bin\Release
 
-set BUILD_DIR=build
-set CMAKE_GENERATOR="Visual Studio 17 2022"
-set CMAKE_ARCH=x64
+echo ========================================
+echo Building YOLO11 Pose Detection
+echo ========================================
 
-if exist %BUILD_DIR% (
-    echo Cleaning existing build directory...
-    rmdir /s /q %BUILD_DIR%
+if exist "%BUILD_DIR%" (
+    echo Removing existing build directory...
+    rmdir /s /q "%BUILD_DIR%"
 )
 
-echo Creating build directory...
-mkdir %BUILD_DIR%
+if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
+cd /d "%BUILD_DIR%"
 
 echo.
-echo Configuring CMake...
-cmake -B %BUILD_DIR% -G %CMAKE_GENERATOR% -A %CMAKE_ARCH% ^
+echo [1/3] Running CMake configuration...
+cmake -G "Visual Studio 17 2022" -A x64 ^
+    -DCMAKE_BUILD_TYPE=Release ^
     -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8" ^
-    -DTensorRT_ROOT_DIR="C:/TensorRT"
+    -DTensorRT_ROOT_DIR="C:/TensorRT/TensorRT-10.9.0.34" ^
+    ..
 
 if %ERRORLEVEL% neq 0 (
     echo CMake configuration failed!
+    pause
     exit /b 1
 )
 
 echo.
-echo Building Release version...
-cmake --build %BUILD_DIR% --config Release -j
+echo [2/3] Building project...
+cmake --build . --config Release --parallel
 
 if %ERRORLEVEL% neq 0 (
     echo Build failed!
+    pause
     exit /b 1
 )
 
 echo.
-echo ============================================
+echo [3/3] Copying DLLs...
+
+set CUDA_BIN=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin
+set TRT_BIN=C:\TensorRT\TensorRT-10.9.0.34\lib
+
+if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
+
+copy /Y "%CUDA_BIN%\cudart64_*.dll" "%BIN_DIR%\" 2>nul
+copy /Y "%CUDA_BIN%\cublas64_*.dll" "%BIN_DIR%\" 2>nul
+copy /Y "%CUDA_BIN%\cublasLt64_*.dll" "%BIN_DIR%\" 2>nul
+
+copy /Y "%TRT_BIN%\nvinfer_10.dll" "%BIN_DIR%\" 2>nul
+copy /Y "%TRT_BIN%\nvonnxparser_10.dll" "%BIN_DIR%\" 2>nul
+
+echo.
+echo ========================================
 echo Build completed successfully!
-echo Executables are in: %BUILD_DIR%\bin\Release
-echo ============================================
+echo Output: %BIN_DIR%
+echo ========================================
+
+cd /d "%PROJECT_DIR%"
+endlocal

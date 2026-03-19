@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.18)
+
+set(CMAKE_CUDA_ARCHITECTURES 75 86 89 CACHE STRING "CUDA architectures" FORCE)
+set(CMAKE_CUDA_FLAGS "-arch=sm_75" CACHE STRING "CUDA flags" FORCE)
+
 project(yolo11_pose_trt LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 86 89 90)
-endif()
 
 set(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8" CACHE PATH "CUDA Toolkit path")
 set(TensorRT_ROOT_DIR "C:/TensorRT/TensorRT-10.9.0.34" CACHE PATH "TensorRT path")
@@ -37,6 +37,9 @@ set(COMMON_CUDA_SOURCES
 )
 
 add_library(common STATIC ${COMMON_SOURCES} ${COMMON_CUDA_SOURCES})
+
+target_compile_options(common PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-allow-unsupported-compiler>)
+
 target_link_libraries(common
     nvinfer_10
     nvonnxparser_10
