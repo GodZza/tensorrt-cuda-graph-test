@@ -171,4 +171,50 @@ inline int show_image(const std::string& title, const uint8_t* rgb_data, int wid
     return window.messageLoop();
 }
 
+inline int show_images(
+    const std::string& title,
+    const std::vector<uint8_t*>& rgb_datas,
+    const std::vector<int>& widths,
+    const std::vector<int>& heights) {
+    
+    if (rgb_datas.empty()) return -1;
+    
+    int num_images = static_cast<int>(rgb_datas.size());
+    
+    int cols = (num_images <= 2) ? num_images : 2;
+    int rows = (num_images + cols - 1) / cols;
+    
+    int max_w = 0, max_h = 0;
+    for (int i = 0; i < num_images; i++) {
+        if (widths[i] > max_w) max_w = widths[i];
+        if (heights[i] > max_h) max_h = heights[i];
+    }
+    
+    int canvas_width = max_w * cols;
+    int canvas_height = max_h * rows;
+    
+    std::vector<uint8_t> canvas(canvas_width * canvas_height * 3, 128);
+    
+    for (int i = 0; i < num_images; i++) {
+        int col = i % cols;
+        int row = i / cols;
+        int offset_x = col * max_w + (max_w - widths[i]) / 2;
+        int offset_y = row * max_h + (max_h - heights[i]) / 2;
+        
+        for (int y = 0; y < heights[i]; y++) {
+            for (int x = 0; x < widths[i]; x++) {
+                int src_idx = (y * widths[i] + x) * 3;
+                int dst_y = offset_y + y;
+                int dst_x = offset_x + x;
+                int dst_idx = (dst_y * canvas_width + dst_x) * 3;
+                canvas[dst_idx + 0] = rgb_datas[i][src_idx + 0];
+                canvas[dst_idx + 1] = rgb_datas[i][src_idx + 1];
+                canvas[dst_idx + 2] = rgb_datas[i][src_idx + 2];
+            }
+        }
+    }
+    
+    return show_image(title, canvas.data(), canvas_width, canvas_height);
+}
+
 }

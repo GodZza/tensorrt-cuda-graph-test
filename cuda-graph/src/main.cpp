@@ -140,7 +140,16 @@ int main(int argc, char** argv) {
     }
     
     std::cout << "\nPress ESC to exit..." << std::endl;
-    win32_display::show_image("YOLO11 Pose Detection Result (CUDA Graph)", images[0].data(), widths[0], heights[0]);
+    
+    if (images.size() == 1) {
+        win32_display::show_image("YOLO11 Pose Detection Result (CUDA Graph)", images[0].data(), widths[0], heights[0]);
+    } else {
+        std::vector<uint8_t*> img_ptrs;
+        for (auto& img : images) {
+            img_ptrs.push_back(img.data());
+        }
+        win32_display::show_images("YOLO11 Pose Detection Result (CUDA Graph - Batch)", img_ptrs, widths, heights);
+    }
     
     return 0;
 }
