@@ -1,15 +1,15 @@
 """
-YOLO11 Pose 模型导出脚本 - 固定尺寸版本
-将 YOLO11 Pose 模型导出为 ONNX 格式，"""
+YOLO11 Pose 模型导出脚本 - 支持动态 Batch Size
+"""
 
 from ultralytics import YOLO
 import argparse
 import os
 import shutil
 
-def export_yolo11_pose(model_size='n', output_dir='models'):
+def export_yolo11_pose(model_size='n', output_dir='models', dynamic=True):
     """
-    导出 YOLO11 Pose 模型 (固定尺寸)
+    导出 YOLO11 Pose 模型
     """
     model_name = f'yolo11{model_size}-pose'
     print(f"Loading {model_name}...")
@@ -18,13 +18,13 @@ def export_yolo11_pose(model_size='n', output_dir='models'):
     
     os.makedirs(output_dir, exist_ok=True)
     
-    print(f"Exporting to ONNX with fixed input size...")
+    print(f"Exporting to ONNX (dynamic={dynamic})...")
     
     model.export(
         format='onnx',
         imgsz=640,
         simplify=False,
-        dynamic=False,
+        dynamic=dynamic,
         opset=12,
     )
     
@@ -44,10 +44,15 @@ if __name__ == '__main__':
                         help='Model size: n/s/m/l/x')
     parser.add_argument('--output', type=str, default='models',
                         help='Output directory')
+    parser.add_argument('--dynamic', action='store_true', default=True,
+                        help='Export with dynamic batch size')
+    parser.add_argument('--static', action='store_true',
+                        help='Export with static batch size')
     
     args = parser.parse_args()
     
     export_yolo11_pose(
         model_size=args.size,
-        output_dir=args.output
+        output_dir=args.output,
+        dynamic=not args.static
     )

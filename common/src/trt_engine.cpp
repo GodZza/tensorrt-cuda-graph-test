@@ -16,6 +16,7 @@ struct TrtEngine::Impl {
     int input_size = 0;
     int output_size = 0;
     int max_batch_size = 1;
+    int configured_max_batch = 16;
     
     ~Impl() {
         if (d_input) { cudaFree(d_input); d_input = nullptr; }
@@ -29,7 +30,8 @@ TrtEngine::TrtEngine() : impl_(new Impl()) {}
 
 TrtEngine::~TrtEngine() = default;
 
-bool TrtEngine::load_engine(const std::string& engine_path) {
+bool TrtEngine::load_engine(const std::string& engine_path, int max_batch_size) {
+    impl_->configured_max_batch = max_batch_size;
     std::ifstream file(engine_path, std::ios::binary);
     if (!file) {
         std::cerr << "Failed to open engine file: " << engine_path << std::endl;
@@ -61,15 +63,22 @@ bool TrtEngine::load_engine(const std::string& engine_path) {
     auto output_dims = impl_->engine->getTensorShape(output_name);
     
     impl_->max_batch_size = input_dims.d[0];
+    if (impl_->max_batch_size == -1) {
+        impl_->max_batch_size = impl_->configured_max_batch;
+    }
     
     impl_->input_size = 1;
     for (int i = 1; i < input_dims.nbDims; i++) {
-        impl_->input_size *= input_dims.d[i];
+        int dim = input_dims.d[i];
+        if (dim == -1) dim = 640;
+        impl_->input_size *= dim;
     }
     
     impl_->output_size = 1;
     for (int i = 1; i < output_dims.nbDims; i++) {
-        impl_->output_size *= output_dims.d[i];
+        int dim = output_dims.d[i];
+        if (dim == -1) dim = 8400;
+        impl_->output_size *= dim;
     }
     
     CUDA_CHECK(cudaMalloc(&impl_->d_input, impl_->max_batch_size * impl_->input_size * sizeof(float)));

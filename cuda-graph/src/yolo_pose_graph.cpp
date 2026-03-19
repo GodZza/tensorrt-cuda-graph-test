@@ -28,7 +28,7 @@ bool YoloPoseDetectorGraph::init(const InferConfig& config) {
     config_ = config;
     
     engine_ = std::make_unique<TrtEngine>();
-    if (!engine_->load_engine(config.engine_path)) {
+    if (!engine_->load_engine(config.engine_path, config.max_batch_size)) {
         std::cerr << "Failed to load engine: " << config.engine_path << std::endl;
         return false;
     }
@@ -96,6 +96,32 @@ bool YoloPoseDetectorGraph::build_cuda_graph(int batch_size) {
     stream_->synchronize();
     
     engine_->setup_inference(batch_size);
+    
+    preprocess_gpu_with_infos(
+        static_cast<const uint8_t*>(d_input_images_.get()),
+        static_cast<float*>(engine_->get_input_buffer()),
+        batch_size,
+        config_.input_width, config_.input_height,
+        static_cast<ImageInfo*>(d_image_infos_.get()),
+        stream_->get());
+    
+    engine_->enqueue_async(stream_->get());
+    
+    postprocess_gpu(
+        static_cast<const float*>(engine_->get_output_buffer()),
+        static_cast<PoseResult*>(d_results_.get()),
+        static_cast<int*>(d_num_detections_.get()),
+        batch_size,
+        engine_->get_output_size(),
+        config_.input_width,
+        config_.input_height,
+        static_cast<const ImageInfo*>(d_image_infos_.get()),
+        config_.conf_threshold,
+        config_.nms_threshold,
+        config_.max_detections,
+        stream_->get());
+    
+    stream_->synchronize();
     
     CUDA_CHECK(cudaStreamBeginCapture(stream_->get(), cudaStreamCaptureModeGlobal));
     

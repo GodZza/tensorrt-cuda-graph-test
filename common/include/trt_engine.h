@@ -21,7 +21,7 @@ public:
     TrtEngine();
     ~TrtEngine();
     
-    bool load_engine(const std::string& engine_path);
+    bool load_engine(const std::string& engine_path, int max_batch_size = 16);
     bool build_engine_from_onnx(const std::string& onnx_path, 
                                  const std::string& engine_path,
                                  int max_batch_size,

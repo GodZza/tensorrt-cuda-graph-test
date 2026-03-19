@@ -1,5 +1,5 @@
 """
-ONNX 转 TensorRT Engine 脚本 (适配固定尺寸模型)
+ONNX 转 TensorRT Engine 脚本 (支持动态 Batch Size 和动态输入尺寸)
 """
 
 import tensorrt as trt
@@ -9,12 +9,14 @@ import sys
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
-def build_engine(onnx_path, engine_path, use_fp16=True):
+def build_engine(onnx_path, engine_path, use_fp16=True, min_batch=1, opt_batch=8, max_batch=16, imgsz=640):
     """
-    将 ONNX 模型转换为 TensorRT Engine (固定尺寸)
+    将 ONNX 模型转换为 TensorRT Engine (支持动态 Batch Size 和动态输入尺寸)
     """
     print(f"Building TensorRT engine from: {onnx_path}")
     print(f"  FP16: {use_fp16}")
+    print(f"  Batch size: min={min_batch}, opt={opt_batch}, max={max_batch}")
+    print(f"  Image size: {imgsz}")
     
     builder = trt.Builder(TRT_LOGGER)
     network = builder.create_network(
@@ -37,6 +39,34 @@ def build_engine(onnx_path, engine_path, use_fp16=True):
     print(f"  Input name: {input_name}")
     print(f"  Input dims: {input_dims}")
     
+    profile = builder.create_optimization_profile()
+    
+    if input_dims[2] == -1 or input_dims[3] == -1:
+        print(f"  Dynamic input size detected, using fixed size: {imgsz}")
+        profile.set_shape(
+            input_name,
+            (min_batch, input_dims[1], imgsz, imgsz),
+            (opt_batch, input_dims[1], imgsz, imgsz),
+            (max_batch, input_dims[1], imgsz, imgsz)
+        )
+    else:
+        print(f"  Using fixed input dimensions: {input_dims}")
+        profile.set_shape(
+            input_name,
+            (min_batch, input_dims[1], input_dims[2], input_dims[3]),
+            (opt_batch, input_dims[1], input_dims[2], input_dims[3]),
+            (max_batch, input_dims[1], input_dims[2], input_dims[3])
+        )
+    
+    config.add_optimization_profile(profile)
+    print(f"  Dynamic batch enabled for input: {min_batch}-{max_batch}")
+    
+    for i in range(network.num_outputs):
+        output = network.get_output(i)
+        output_name = output.name
+        output_dims = output.shape
+        print(f"  Output {i}: {output_name}, dims: {output_dims}")
+    
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 4 << 30)
     
     if use_fp16 and builder.platform_has_fast_fp16:
@@ -54,31 +84,27 @@ def build_engine(onnx_path, engine_path, use_fp16=True):
         f.write(plan)
     
     print(f"Engine saved to: {engine_path}")
-    print(f"  Output dims: {network.get_output(0).shape}")
     return True
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Convert ONNX to TensorRT Engine')
-    parser.add_argument('--onnx', type=str, required=True,
-                        help='Input ONNX file path')
-    parser.add_argument('--engine', type=str, default=None,
-                        help='Output engine file path')
-    parser.add_argument('--fp16', action='store_true', default=True,
-                        help='Use FP16 precision')
-    parser.add_argument('--fp32', action='store_true',
-                        help='Use FP32 precision')
+    parser = argparse.ArgumentParser(description='Build TensorRT engine from ONNX')
+    parser.add_argument('--onnx', type=str, required=True, help='ONNX model path')
+    parser.add_argument('--output', type=str, required=True, help='Output engine path')
+    parser.add_argument('--fp16', action='store_true', default=True, help='Use FP16')
+    parser.add_argument('--min-batch', type=int, default=1, help='Minimum batch size')
+    parser.add_argument('--opt-batch', type=int, default=4, help='Optimal batch size')
+    parser.add_argument('--max-batch', type=int, default=16, help='Maximum batch size')
+    parser.add_argument('--imgsz', type=int, default=640, help='Image size')
     
     args = parser.parse_args()
     
-    engine_path = args.engine
-    if engine_path is None:
-        base_name = os.path.splitext(args.onnx)[0]
-        engine_path = f"{base_name}.engine"
-    
-    success = build_engine(
+    build_engine(
         onnx_path=args.onnx,
-        engine_path=engine_path,
-        use_fp16=not args.fp32
+        engine_path=args.output,
+        use_fp16=args.fp16,
+        min_batch=args.min_batch,
+        opt_batch=args.opt_batch,
+        max_batch=args.max_batch,
+        imgsz=args.imgsz
     )
-    
-    sys.exit(0 if success else 1)
+
