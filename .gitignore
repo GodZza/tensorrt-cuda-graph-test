@@ -1,0 +1,73 @@
+# Build directories
+build/
+bin/
+lib/
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.pdb
+*.ilk
+*.idb
+
+# Compiled files
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.exe
+*.so
+*.dylib
+
+# CUDA
+*.cubin
+*.fatbin
+*.ptx
+
+# Model files (large)
+models/*.engine
+models/*.onnx
+models/*.plan
+
+# Keep model directory
+!models/.gitkeep
+
+# Test outputs
+test-img/*_result_*.jpg
+test-img/*_result_*.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
