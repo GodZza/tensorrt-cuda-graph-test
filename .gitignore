@@ -1,54 +1,27 @@
-# Build directories
+# Build directories (generated)
 build/
 build_nmake/
 build_ninja/
-bin/
-lib/
 
-# Visual Studio
-.vs/
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
-*.sln
-*.suo
-*.user
-*.sdf
-*.opensdf
-*.pdb
-*.ilk
-*.idb
-
-# Compiled files
+# Compiled Object files
 *.obj
 *.o
 *.a
 *.lib
-*.dll
-*.exe
-*.so
-*.dylib
-
-# CUDA
-*.cubin
-*.fatbin
-*.ptx
 
 # CUDA intermediate files
 *.cudafe1.*
 *.cpp*.ii
-*.cpp*.ii.res
 *.fatbin.c
 *.module_id
 *.stub.c
+*.ptx
+*.cubin
+*.fatbin
 
-# Model files (large)
-models/*.engine
-models/*.onnx
-models/*.plan
-
-# Keep model directory
-!models/.gitkeep
+# TensorRT engine files (large binary)
+*.engine
+*.plan
 
 # Test outputs
 test-img/*_result_*.jpg
@@ -81,12 +54,3 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-
-# Test files
-test_cuda.cu
-test_cuda.obj
-test.obj.res
-test_nvcc.bat
-test_nvcc_debug.bat
-CUDA_Arch.props
-delete_backup.bat
