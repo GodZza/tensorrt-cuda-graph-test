@@ -160,8 +160,9 @@ __global__ void preprocess_with_infos_kernel(
     
     int src_width = d_image_infos[batch_idx].src_width;
     int src_height = d_image_infos[batch_idx].src_height;
+    size_t data_offset = d_image_infos[batch_idx].data_offset;
     
-    const uint8_t* d_src = d_src_images + batch_idx * src_width * src_height * 3;
+    const uint8_t* d_src = d_src_images + data_offset;
     
     float scale = min(
         static_cast<float>(dst_width) / src_width,

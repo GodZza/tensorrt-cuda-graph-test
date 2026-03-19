@@ -181,20 +181,21 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer_batch(
     bool use_graph = graph_pool_[graph_batch_size].initialized;
     
     size_t total_image_size = 0;
+    std::vector<size_t> image_offsets(actual_batch_size);
     for (int i = 0; i < actual_batch_size; i++) {
+        image_offsets[i] = total_image_size;
         total_image_size += images[i].size();
     }
     
     uint8_t* pinned_ptr = static_cast<uint8_t*>(pinned_input_.get());
-    size_t offset = 0;
     for (int i = 0; i < actual_batch_size; i++) {
-        memcpy(pinned_ptr + offset, images[i].data(), images[i].size());
-        offset += images[i].size();
+        memcpy(pinned_ptr + image_offsets[i], images[i].data(), images[i].size());
     }
     
     for (int i = 0; i < actual_batch_size; i++) {
         h_image_infos_[i].src_width = image_sizes[i].first;
         h_image_infos_[i].src_height = image_sizes[i].second;
+        h_image_infos_[i].data_offset = image_offsets[i];
     }
     
     CUDA_CHECK(cudaMemcpyAsync(d_input_images_.get(), pinned_input_.get(),
@@ -280,20 +281,21 @@ void YoloPoseDetectorGraph::benchmark(
     float total_time = 0.0f;
     
     size_t total_image_size = 0;
+    std::vector<size_t> image_offsets(batch_size);
     for (int i = 0; i < batch_size; i++) {
+        image_offsets[i] = total_image_size;
         total_image_size += images[i].size();
     }
     
     uint8_t* pinned_ptr = static_cast<uint8_t*>(pinned_input_.get());
-    size_t offset = 0;
     for (int i = 0; i < batch_size; i++) {
-        memcpy(pinned_ptr + offset, images[i].data(), images[i].size());
-        offset += images[i].size();
+        memcpy(pinned_ptr + image_offsets[i], images[i].data(), images[i].size());
     }
     
     for (int i = 0; i < batch_size; i++) {
         h_image_infos_[i].src_width = src_width;
         h_image_infos_[i].src_height = src_height;
+        h_image_infos_[i].data_offset = image_offsets[i];
     }
     
     for (int i = 0; i < iterations; i++) {

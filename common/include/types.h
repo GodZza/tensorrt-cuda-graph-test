@@ -45,6 +45,7 @@ struct ImageInfo {
     float scale_y;
     int pad_x;
     int pad_y;
+    size_t data_offset;
 };
 
 struct GpuTimer {
