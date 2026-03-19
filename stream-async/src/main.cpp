@@ -3,21 +3,109 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <windows.h>
 
-void draw_results(
-    const std::string& input_path,
-    const std::string& output_path,
-    const std::vector<yolo::PoseResult>& results) {
+static std::vector<uint8_t> g_display_image_bgr;
+static int g_img_width = 0;
+static int g_img_height = 0;
+static BITMAPINFO g_bmi = {};
+
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        
+        if (!g_display_image_bgr.empty()) {
+            StretchDIBits(hdc,
+                0, 0, g_img_width, g_img_height,
+                0, 0, g_img_width, g_img_height,
+                g_display_image_bgr.data(), &g_bmi,
+                DIB_RGB_COLORS, SRCCOPY);
+        }
+        
+        EndPaint(hWnd, &ps);
+        break;
+    }
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) {
+            PostQuitMessage(0);
+        }
+        break;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+    default:
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+void show_image_win32(const std::string& title, const uint8_t* img_data, int width, int height) {
+    g_img_width = width;
+    g_img_height = height;
     
-    int width, height, channels;
-    unsigned char* img_data = stbi_load(input_path.c_str(), &width, &height, &channels, 3);
-    if (!img_data) {
-        std::cerr << "Failed to load image for drawing: " << input_path << std::endl;
+    g_display_image_bgr.assign(img_data, img_data + width * height * 3);
+    image_utils::rgb_to_bgr(g_display_image_bgr.data(), width, height);
+    
+    g_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    g_bmi.bmiHeader.biWidth = width;
+    g_bmi.bmiHeader.biHeight = -height;
+    g_bmi.bmiHeader.biPlanes = 1;
+    g_bmi.bmiHeader.biBitCount = 24;
+    g_bmi.bmiHeader.biCompression = BI_RGB;
+    g_bmi.bmiHeader.biSizeImage = 0;
+    g_bmi.bmiHeader.biXPelsPerMeter = 0;
+    g_bmi.bmiHeader.biYPelsPerMeter = 0;
+    g_bmi.bmiHeader.biClrUsed = 0;
+    g_bmi.bmiHeader.biClrImportant = 0;
+    
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+    
+    WNDCLASSEXW wcex = {};
+    wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.hInstance = hInstance;
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszClassName = L"YoloPoseWindow";
+    RegisterClassExW(&wcex);
+    
+    int screen_width = GetSystemMetrics(SM_CXSCREEN);
+    int screen_height = GetSystemMetrics(SM_CYSCREEN);
+    
+    int window_width = min(width, screen_width - 100);
+    int window_height = min(height, screen_height - 100);
+    int x = (screen_width - window_width) / 2;
+    int y = (screen_height - window_height) / 5;
+    
+    HWND hWnd = CreateWindowW(
+        L"YoloPoseWindow",
+        std::wstring(title.begin(), title.end()).c_str(),
+        WS_OVERLAPPEDWINDOW,
+        x, y, window_width, window_height,
+        nullptr, nullptr, hInstance, nullptr);
+    
+    if (!hWnd) {
+        std::cerr << "Failed to create window" << std::endl;
         return;
     }
     
-    std::vector<uint8_t> img(img_data, img_data + width * height * 3);
-    stbi_image_free(img_data);
+    ShowWindow(hWnd, SW_SHOW);
+    UpdateWindow(hWnd);
+    
+    MSG msg;
+    while (GetMessage(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+void draw_results_on_image(
+    std::vector<uint8_t>& img,
+    int width, int height,
+    const std::vector<yolo::PoseResult>& results) {
     
     static const uint8_t colors[17][3] = {
         {255, 0, 0}, {255, 85, 0}, {255, 170, 0},
@@ -64,9 +152,6 @@ void draw_results(
             }
         }
     }
-    
-    stbi_write_jpg(output_path.c_str(), width, height, 3, img.data(), 90);
-    std::cout << "Result saved to: " << output_path << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -115,9 +200,15 @@ int main(int argc, char** argv) {
                   << "," << r.bbox.x2 << "," << r.bbox.y2 << "]" << std::endl;
     }
     
+    draw_results_on_image(image_data, width, height, results[0]);
+    
     size_t dot_pos = image_path.find_last_of('.');
     std::string output_path = image_path.substr(0, dot_pos) + "_result_stream.jpg";
-    draw_results(image_path, output_path, results[0]);
+    stbi_write_jpg(output_path.c_str(), width, height, 3, image_data.data(), 90);
+    std::cout << "Result saved to: " << output_path << std::endl;
+    
+    std::cout << "\nPress ESC or close window to exit..." << std::endl;
+    show_image_win32("YOLO11 Pose Detection Result", image_data.data(), width, height);
     
     if (iterations > 0) {
         detector.benchmark(images, width, height, iterations);

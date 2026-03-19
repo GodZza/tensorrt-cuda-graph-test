@@ -8,6 +8,7 @@
 
 #include <vector>
 #include <string>
+#include <algorithm>
 
 namespace image_utils {
 
@@ -35,21 +36,21 @@ inline void draw_box(uint8_t* img, int img_w, int img_h,
         for (int x = std::max(0, x1 + t); x <= std::min(img_w - 1, x2 - t); x++) {
             if (y1 + t >= 0 && y1 + t < img_h) {
                 int idx = ((y1 + t) * img_w + x) * 3;
-                img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
             }
             if (y2 - t >= 0 && y2 - t < img_h) {
                 int idx = ((y2 - t) * img_w + x) * 3;
-                img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
             }
         }
         for (int y = std::max(0, y1 + t); y <= std::min(img_h - 1, y2 - t); y++) {
             if (x1 + t >= 0 && x1 + t < img_w) {
                 int idx = (y * img_w + x1 + t) * 3;
-                img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
             }
             if (x2 - t >= 0 && x2 - t < img_w) {
                 int idx = (y * img_w + x2 - t) * 3;
-                img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
             }
         }
     }
@@ -65,7 +66,7 @@ inline void draw_circle(uint8_t* img, int img_w, int img_h,
                 int y = cy + dy;
                 if (x >= 0 && x < img_w && y >= 0 && y < img_h) {
                     int idx = (y * img_w + x) * 3;
-                    img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                    img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
                 }
             }
         }
@@ -81,22 +82,32 @@ inline void draw_line(uint8_t* img, int img_w, int img_h,
     int sy = y1 < y2 ? 1 : -1;
     int err = dx - dy;
     
+    int px1 = x1, py1 = y1;
+    
     while (true) {
         for (int tx = -thickness / 2; tx <= thickness / 2; tx++) {
             for (int ty = -thickness / 2; ty <= thickness / 2; ty++) {
-                int px = x1 + tx;
-                int py = y1 + ty;
+                int px = px1 + tx;
+                int py = py1 + ty;
                 if (px >= 0 && px < img_w && py >= 0 && py < img_h) {
                     int idx = (py * img_w + px) * 3;
-                    img[idx] = b; img[idx + 1] = g; img[idx + 2] = r;
+                    img[idx] = r; img[idx + 1] = g; img[idx + 2] = b;
                 }
             }
         }
         
-        if (x1 == x2 && y1 == y2) break;
+        if (px1 == x2 && py1 == y2) break;
         int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; x1 += sx; }
-        if (e2 < dx) { err += dx; y1 += sy; }
+        if (e2 > -dy) { err -= dy; px1 += sx; }
+        if (e2 < dx) { err += dx; py1 += sy; }
+    }
+}
+
+inline void rgb_to_bgr(uint8_t* data, int width, int height) {
+    int size = width * height;
+    for (int i = 0; i < size; i++) {
+        int idx = i * 3;
+        std::swap(data[idx], data[idx + 2]);
     }
 }
 
