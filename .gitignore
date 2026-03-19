@@ -1,5 +1,7 @@
 # Build directories
 build/
+build_nmake/
+build_ninja/
 bin/
 lib/
 
@@ -31,6 +33,14 @@ lib/
 *.cubin
 *.fatbin
 *.ptx
+
+# CUDA intermediate files
+*.cudafe1.*
+*.cpp*.ii
+*.cpp*.ii.res
+*.fatbin.c
+*.module_id
+*.stub.c
 
 # Model files (large)
 models/*.engine
@@ -71,3 +81,12 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Test files
+test_cuda.cu
+test_cuda.obj
+test.obj.res
+test_nvcc.bat
+test_nvcc_debug.bat
+CUDA_Arch.props
+delete_backup.bat
