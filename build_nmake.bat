@@ -9,6 +9,11 @@ echo ========================================
 echo Building YOLO11 Pose Detection (NMake)
 echo ========================================
 
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
+)
+
 if exist "%BUILD_DIR%" (
     echo Removing existing build directory...
     rmdir /s /q "%BUILD_DIR%"
