@@ -163,15 +163,22 @@ int TrtEngine::get_input_size() const { return impl_->input_size; }
 int TrtEngine::get_output_size() const { return impl_->output_size; }
 int TrtEngine::get_max_batch_size() const { return impl_->max_batch_size; }
 
-void TrtEngine::infer_async(int batch_size, cudaStream_t stream) {
+void TrtEngine::setup_inference(int batch_size) {
     auto input_name = impl_->engine->getIOTensorName(0);
     auto output_name = impl_->engine->getIOTensorName(1);
     
     impl_->context->setInputShape(input_name, nvinfer1::Dims4{batch_size, 3, 640, 640});
     impl_->context->setTensorAddress(input_name, impl_->d_input);
     impl_->context->setTensorAddress(output_name, impl_->d_output);
-    
+}
+
+void TrtEngine::enqueue_async(cudaStream_t stream) {
     impl_->context->enqueueV3(stream);
+}
+
+void TrtEngine::infer_async(int batch_size, cudaStream_t stream) {
+    setup_inference(batch_size);
+    enqueue_async(stream);
 }
 
 void TrtEngine::infer_sync(int batch_size) {

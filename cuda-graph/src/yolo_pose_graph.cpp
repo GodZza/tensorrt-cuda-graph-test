@@ -95,18 +95,11 @@ bool YoloPoseDetectorGraph::build_cuda_graph(int batch_size) {
     
     stream_->synchronize();
     
+    engine_->setup_inference(batch_size);
+    
     CUDA_CHECK(cudaStreamBeginCapture(stream_->get(), cudaStreamCaptureModeGlobal));
     
-    preprocess_gpu(
-        static_cast<const uint8_t*>(d_input_images_.get()),
-        static_cast<float*>(engine_->get_input_buffer()),
-        batch_size,
-        config_.input_width, config_.input_height,
-        config_.input_width, config_.input_height,
-        static_cast<ImageInfo*>(d_image_infos_.get()),
-        stream_->get());
-    
-    engine_->infer_async(batch_size, stream_->get());
+    engine_->enqueue_async(stream_->get());
     
     postprocess_gpu(
         static_cast<const float*>(engine_->get_output_buffer()),
@@ -156,19 +149,21 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer(
     CUDA_CHECK(cudaMemcpyAsync(d_input_images_.get(), pinned_input_.get(),
         actual_batch_size * single_image_size, cudaMemcpyHostToDevice, stream_->get()));
     
+    preprocess_gpu(
+        static_cast<const uint8_t*>(d_input_images_.get()),
+        static_cast<float*>(engine_->get_input_buffer()),
+        actual_batch_size,
+        src_width, src_height,
+        config_.input_width, config_.input_height,
+        static_cast<ImageInfo*>(d_image_infos_.get()),
+        stream_->get());
+    
     if (use_graph) {
         CUDA_CHECK(cudaGraphLaunch(graph_pool_[graph_batch_size].exec, stream_->get()));
     } else {
-        preprocess_gpu(
-            static_cast<const uint8_t*>(d_input_images_.get()),
-            static_cast<float*>(engine_->get_input_buffer()),
-            actual_batch_size,
-            src_width, src_height,
-            config_.input_width, config_.input_height,
-            static_cast<ImageInfo*>(d_image_infos_.get()),
-            stream_->get());
+        engine_->setup_inference(actual_batch_size);
         
-        engine_->infer_async(actual_batch_size, stream_->get());
+        engine_->enqueue_async(stream_->get());
         
         postprocess_gpu(
             static_cast<const float*>(engine_->get_output_buffer()),
@@ -252,19 +247,21 @@ void YoloPoseDetectorGraph::benchmark(
         
         CUDA_CHECK(cudaEventRecord(start, stream_->get()));
         
+        preprocess_gpu(
+            static_cast<const uint8_t*>(d_input_images_.get()),
+            static_cast<float*>(engine_->get_input_buffer()),
+            batch_size,
+            src_width, src_height,
+            config_.input_width, config_.input_height,
+            static_cast<ImageInfo*>(d_image_infos_.get()),
+            stream_->get());
+        
         if (use_graph) {
             CUDA_CHECK(cudaGraphLaunch(graph_pool_[graph_batch_size].exec, stream_->get()));
         } else {
-            preprocess_gpu(
-                static_cast<const uint8_t*>(d_input_images_.get()),
-                static_cast<float*>(engine_->get_input_buffer()),
-                batch_size,
-                src_width, src_height,
-                config_.input_width, config_.input_height,
-                static_cast<ImageInfo*>(d_image_infos_.get()),
-                stream_->get());
+            engine_->setup_inference(batch_size);
             
-            engine_->infer_async(batch_size, stream_->get());
+            engine_->enqueue_async(stream_->get());
             
             postprocess_gpu(
                 static_cast<const float*>(engine_->get_output_buffer()),

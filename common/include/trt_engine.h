@@ -37,6 +37,9 @@ public:
     void infer_async(int batch_size, cudaStream_t stream);
     void infer_sync(int batch_size);
     
+    void setup_inference(int batch_size);
+    void enqueue_async(cudaStream_t stream);
+    
     nvinfer1::ICudaEngine* get_engine() const;
     nvinfer1::IExecutionContext* get_context() const;
     
