@@ -99,6 +99,14 @@ bool YoloPoseDetectorGraph::build_cuda_graph(int batch_size) {
     
     CUDA_CHECK(cudaStreamBeginCapture(stream_->get(), cudaStreamCaptureModeGlobal));
     
+    preprocess_gpu_with_infos(
+        static_cast<const uint8_t*>(d_input_images_.get()),
+        static_cast<float*>(engine_->get_input_buffer()),
+        batch_size,
+        config_.input_width, config_.input_height,
+        static_cast<ImageInfo*>(d_image_infos_.get()),
+        stream_->get());
+    
     engine_->enqueue_async(stream_->get());
     
     postprocess_gpu(
@@ -130,6 +138,14 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer(
     int src_width,
     int src_height) {
     
+    std::vector<std::pair<int, int>> image_sizes(images.size(), {src_width, src_height});
+    return infer_batch(images, image_sizes);
+}
+
+std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer_batch(
+    const std::vector<std::vector<uint8_t>>& images,
+    const std::vector<std::pair<int, int>>& image_sizes) {
+    
     int actual_batch_size = static_cast<int>(images.size());
     if (actual_batch_size == 0 || actual_batch_size > config_.max_batch_size) {
         return {};
@@ -138,30 +154,41 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer(
     int graph_batch_size = get_graph_batch_size(actual_batch_size);
     bool use_graph = graph_pool_[graph_batch_size].initialized;
     
-    size_t single_image_size = src_width * src_height * 3;
+    size_t total_image_size = 0;
+    for (int i = 0; i < actual_batch_size; i++) {
+        total_image_size += images[i].size();
+    }
     
     uint8_t* pinned_ptr = static_cast<uint8_t*>(pinned_input_.get());
+    size_t offset = 0;
     for (int i = 0; i < actual_batch_size; i++) {
-        memcpy(pinned_ptr + i * single_image_size, 
-               images[i].data(), single_image_size);
+        memcpy(pinned_ptr + offset, images[i].data(), images[i].size());
+        offset += images[i].size();
+    }
+    
+    for (int i = 0; i < actual_batch_size; i++) {
+        h_image_infos_[i].src_width = image_sizes[i].first;
+        h_image_infos_[i].src_height = image_sizes[i].second;
     }
     
     CUDA_CHECK(cudaMemcpyAsync(d_input_images_.get(), pinned_input_.get(),
-        actual_batch_size * single_image_size, cudaMemcpyHostToDevice, stream_->get()));
+        total_image_size, cudaMemcpyHostToDevice, stream_->get()));
     
-    preprocess_gpu(
-        static_cast<const uint8_t*>(d_input_images_.get()),
-        static_cast<float*>(engine_->get_input_buffer()),
-        actual_batch_size,
-        src_width, src_height,
-        config_.input_width, config_.input_height,
-        static_cast<ImageInfo*>(d_image_infos_.get()),
-        stream_->get());
+    CUDA_CHECK(cudaMemcpyAsync(d_image_infos_.get(), h_image_infos_.data(),
+        actual_batch_size * sizeof(ImageInfo), cudaMemcpyHostToDevice, stream_->get()));
     
     if (use_graph) {
         CUDA_CHECK(cudaGraphLaunch(graph_pool_[graph_batch_size].exec, stream_->get()));
     } else {
         engine_->setup_inference(actual_batch_size);
+        
+        preprocess_gpu_with_infos(
+            static_cast<const uint8_t*>(d_input_images_.get()),
+            static_cast<float*>(engine_->get_input_buffer()),
+            actual_batch_size,
+            config_.input_width, config_.input_height,
+            static_cast<ImageInfo*>(d_image_infos_.get()),
+            stream_->get());
         
         engine_->enqueue_async(stream_->get());
         
@@ -226,18 +253,31 @@ void YoloPoseDetectorGraph::benchmark(
     float total_d2h = 0.0f;
     float total_time = 0.0f;
     
-    size_t single_image_size = src_width * src_height * 3;
-    uint8_t* pinned_ptr = static_cast<uint8_t*>(pinned_input_.get());
+    size_t total_image_size = 0;
     for (int i = 0; i < batch_size; i++) {
-        memcpy(pinned_ptr + i * single_image_size, 
-               images[i].data(), single_image_size);
+        total_image_size += images[i].size();
+    }
+    
+    uint8_t* pinned_ptr = static_cast<uint8_t*>(pinned_input_.get());
+    size_t offset = 0;
+    for (int i = 0; i < batch_size; i++) {
+        memcpy(pinned_ptr + offset, images[i].data(), images[i].size());
+        offset += images[i].size();
+    }
+    
+    for (int i = 0; i < batch_size; i++) {
+        h_image_infos_[i].src_width = src_width;
+        h_image_infos_[i].src_height = src_height;
     }
     
     for (int i = 0; i < iterations; i++) {
         CUDA_CHECK(cudaEventRecord(start, stream_->get()));
         
         CUDA_CHECK(cudaMemcpyAsync(d_input_images_.get(), pinned_input_.get(),
-            batch_size * single_image_size, cudaMemcpyHostToDevice, stream_->get()));
+            total_image_size, cudaMemcpyHostToDevice, stream_->get()));
+        
+        CUDA_CHECK(cudaMemcpyAsync(d_image_infos_.get(), h_image_infos_.data(),
+            batch_size * sizeof(ImageInfo), cudaMemcpyHostToDevice, stream_->get()));
         
         CUDA_CHECK(cudaEventRecord(stop, stream_->get()));
         CUDA_CHECK(cudaEventSynchronize(stop));
@@ -247,19 +287,18 @@ void YoloPoseDetectorGraph::benchmark(
         
         CUDA_CHECK(cudaEventRecord(start, stream_->get()));
         
-        preprocess_gpu(
-            static_cast<const uint8_t*>(d_input_images_.get()),
-            static_cast<float*>(engine_->get_input_buffer()),
-            batch_size,
-            src_width, src_height,
-            config_.input_width, config_.input_height,
-            static_cast<ImageInfo*>(d_image_infos_.get()),
-            stream_->get());
-        
         if (use_graph) {
             CUDA_CHECK(cudaGraphLaunch(graph_pool_[graph_batch_size].exec, stream_->get()));
         } else {
             engine_->setup_inference(batch_size);
+            
+            preprocess_gpu_with_infos(
+                static_cast<const uint8_t*>(d_input_images_.get()),
+                static_cast<float*>(engine_->get_input_buffer()),
+                batch_size,
+                config_.input_width, config_.input_height,
+                static_cast<ImageInfo*>(d_image_infos_.get()),
+                stream_->get());
             
             engine_->enqueue_async(stream_->get());
             

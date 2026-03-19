@@ -145,6 +145,65 @@ __global__ void preprocess_batch_kernel(
     }
 }
 
+__global__ void preprocess_with_infos_kernel(
+    const uint8_t* __restrict__ d_src_images,
+    float* __restrict__ d_dst_tensor,
+    int batch_size,
+    int dst_width, int dst_height,
+    ImageInfo* __restrict__ d_image_infos) {
+    
+    int batch_idx = blockIdx.z;
+    int dx = blockIdx.x * blockDim.x + threadIdx.x;
+    int dy = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    if (batch_idx >= batch_size || dx >= dst_width || dy >= dst_height) return;
+    
+    int src_width = d_image_infos[batch_idx].src_width;
+    int src_height = d_image_infos[batch_idx].src_height;
+    
+    const uint8_t* d_src = d_src_images + batch_idx * src_width * src_height * 3;
+    
+    float scale = min(
+        static_cast<float>(dst_width) / src_width,
+        static_cast<float>(dst_height) / src_height
+    );
+    
+    int new_width = __float2int_rn(src_width * scale);
+    int new_height = __float2int_rn(src_height * scale);
+    
+    int pad_x = (dst_width - new_width) / 2;
+    int pad_y = (dst_height - new_height) / 2;
+    
+    if (threadIdx.x == 0 && threadIdx.y == 0 && dx == 0 && dy == 0) {
+        d_image_infos[batch_idx].orig_width = src_width;
+        d_image_infos[batch_idx].orig_height = src_height;
+        d_image_infos[batch_idx].scale_x = 1.0f / scale;
+        d_image_infos[batch_idx].scale_y = 1.0f / scale;
+        d_image_infos[batch_idx].pad_x = pad_x;
+        d_image_infos[batch_idx].pad_y = pad_y;
+    }
+    
+    int dst_idx = batch_idx * dst_width * dst_height * 3;
+    
+    if (dx >= pad_x && dx < pad_x + new_width &&
+        dy >= pad_y && dy < pad_y + new_height) {
+        
+        float src_x = (dx - pad_x) / scale;
+        float src_y = (dy - pad_y) / scale;
+        
+        for (int c = 0; c < 3; c++) {
+            float val = bilinear_interpolate(d_src, src_width, src_height, src_x, src_y, c);
+            int out_c = 2 - c;
+            d_dst_tensor[dst_idx + out_c * dst_width * dst_height + dy * dst_width + dx] = 
+                (val - c_mean[c]) / c_std[c];
+        }
+    } else {
+        for (int c = 0; c < 3; c++) {
+            d_dst_tensor[dst_idx + c * dst_width * dst_height + dy * dst_width + dx] = 0.0f;
+        }
+    }
+}
+
 void preprocess_gpu(
     const uint8_t* d_src_images,
     float* d_dst_tensor,
@@ -162,6 +221,23 @@ void preprocess_gpu(
     preprocess_batch_kernel<<<grid, block, 0, stream>>>(
         d_src_images, d_dst_tensor, batch_size,
         src_width, src_height, dst_width, dst_height, d_image_infos);
+}
+
+void preprocess_gpu_with_infos(
+    const uint8_t* d_src_images,
+    float* d_dst_tensor,
+    int batch_size,
+    int dst_width,
+    int dst_height,
+    ImageInfo* d_image_infos,
+    cudaStream_t stream) {
+    
+    dim3 block(16, 16);
+    dim3 grid(div_up(dst_width, block.x), div_up(dst_height, block.y), batch_size);
+    
+    preprocess_with_infos_kernel<<<grid, block, 0, stream>>>(
+        d_src_images, d_dst_tensor, batch_size,
+        dst_width, dst_height, d_image_infos);
 }
 
 void preprocess_single_gpu(

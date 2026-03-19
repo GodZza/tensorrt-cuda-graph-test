@@ -61,12 +61,21 @@ int main(int argc, char** argv) {
     if (argc < 3) {
         std::cout << "Usage: " << argv[0] << " <engine_path> <image_path> [iterations]" << std::endl;
         std::cout << "Example: " << argv[0] << " models/yolo11n-pose.engine test-img/bus.jpg" << std::endl;
+        std::cout << "  Multiple images: " << argv[0] << " models/yolo11n-pose.engine test-img/bus.jpg test-img/zidane.jpg" << std::endl;
         return -1;
     }
     
     std::string engine_path = argv[1];
-    std::string image_path = argv[2];
-    int iterations = argc > 3 ? std::atoi(argv[3]) : 0;
+    std::vector<std::string> image_paths;
+    for (int i = 2; i < argc && argv[i][0] != '-'; i++) {
+        image_paths.push_back(argv[i]);
+    }
+    int iterations = 0;
+    for (int i = 2; i < argc; i++) {
+        if (std::string(argv[i]) == "--iter" && i + 1 < argc) {
+            iterations = std::atoi(argv[i + 1]);
+        }
+    }
     
     yolo::InferConfig config;
     config.engine_path = engine_path;
@@ -84,38 +93,54 @@ int main(int argc, char** argv) {
         return -1;
     }
     
-    int width, height, channels;
-    auto image_data = image_utils::load_image(image_path, width, height, channels);
-    if (image_data.empty()) {
-        std::cerr << "Failed to load image: " << image_path << std::endl;
+    std::vector<std::vector<uint8_t>> images;
+    std::vector<std::pair<int, int>> image_sizes;
+    std::vector<int> widths, heights;
+    
+    for (const auto& path : image_paths) {
+        int w, h, c;
+        auto img = image_utils::load_image(path, w, h, c);
+        if (img.empty()) {
+            std::cerr << "Failed to load image: " << path << std::endl;
+            continue;
+        }
+        images.push_back(img);
+        image_sizes.push_back({w, h});
+        widths.push_back(w);
+        heights.push_back(h);
+        std::cout << "Loaded: " << path << " (" << w << "x" << h << ")" << std::endl;
+    }
+    
+    if (images.empty()) {
+        std::cerr << "No valid images loaded" << std::endl;
         return -1;
     }
     
-    std::vector<std::vector<uint8_t>> images = {image_data};
+    auto results = detector.infer_batch(images, image_sizes);
     
-    auto results = detector.infer(images, width, height);
-    
-    std::cout << "\nDetection results for " << image_path << ":" << std::endl;
-    for (size_t i = 0; i < results[0].size(); i++) {
-        const auto& r = results[0][i];
-        std::cout << "  Person " << i + 1 << ": conf=" << r.bbox.conf
-                  << " bbox=[" << r.bbox.x1 << "," << r.bbox.y1 
-                  << "," << r.bbox.x2 << "," << r.bbox.y2 << "]" << std::endl;
+    for (size_t i = 0; i < results.size(); i++) {
+        std::cout << "\nDetection results for " << image_paths[i] << ":" << std::endl;
+        for (size_t j = 0; j < results[i].size(); j++) {
+            const auto& r = results[i][j];
+            std::cout << "  Person " << j + 1 << ": conf=" << r.bbox.conf
+                      << " bbox=[" << r.bbox.x1 << "," << r.bbox.y1 
+                      << "," << r.bbox.x2 << "," << r.bbox.y2 << "]" << std::endl;
+        }
+        
+        draw_results_on_image(images[i], widths[i], heights[i], results[i]);
+        
+        size_t dot_pos = image_paths[i].find_last_of('.');
+        std::string output_path = image_paths[i].substr(0, dot_pos) + "_result_graph.jpg";
+        stbi_write_jpg(output_path.c_str(), widths[i], heights[i], 3, images[i].data(), 90);
+        std::cout << "Result saved to: " << output_path << std::endl;
     }
     
-    draw_results_on_image(image_data, width, height, results[0]);
-    
-    size_t dot_pos = image_path.find_last_of('.');
-    std::string output_path = image_path.substr(0, dot_pos) + "_result_graph.jpg";
-    stbi_write_jpg(output_path.c_str(), width, height, 3, image_data.data(), 90);
-    std::cout << "Result saved to: " << output_path << std::endl;
-    
-    if (iterations > 0) {
-        detector.benchmark(images, width, height, iterations);
+    if (iterations > 0 && images.size() > 0) {
+        detector.benchmark(images, widths[0], heights[0], iterations);
     }
     
     std::cout << "\nPress ESC to exit..." << std::endl;
-    win32_display::show_image("YOLO11 Pose Detection Result (CUDA Graph)", image_data.data(), width, height);
+    win32_display::show_image("YOLO11 Pose Detection Result (CUDA Graph)", images[0].data(), widths[0], heights[0]);
     
     return 0;
 }

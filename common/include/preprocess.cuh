@@ -16,6 +16,16 @@ void preprocess_gpu(
     cudaStream_t stream
 );
 
+void preprocess_gpu_with_infos(
+    const uint8_t* d_src_images,
+    float* d_dst_tensor,
+    int batch_size,
+    int dst_width,
+    int dst_height,
+    ImageInfo* d_image_infos,
+    cudaStream_t stream
+);
+
 void preprocess_single_gpu(
     const uint8_t* d_src_image,
     float* d_dst_tensor,

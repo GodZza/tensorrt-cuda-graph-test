@@ -27,6 +27,10 @@ public:
         int src_width,
         int src_height);
     
+    std::vector<std::vector<PoseResult>> infer_batch(
+        const std::vector<std::vector<uint8_t>>& images,
+        const std::vector<std::pair<int, int>>& image_sizes);
+    
     void benchmark(
         const std::vector<std::vector<uint8_t>>& images,
         int src_width,

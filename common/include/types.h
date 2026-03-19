@@ -37,6 +37,8 @@ struct InferConfig {
 };
 
 struct ImageInfo {
+    int src_width;
+    int src_height;
     int orig_width;
     int orig_height;
     float scale_x;
