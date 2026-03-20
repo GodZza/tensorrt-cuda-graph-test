@@ -3,6 +3,8 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <future>
+#include <mutex>
 #include "../../common/include/types.h"
 #include "../../common/include/cuda_utils.h"
 #include "../../common/include/trt_engine.h"
@@ -28,6 +30,10 @@ public:
         int src_height);
     
     std::vector<std::vector<PoseResult>> infer_batch(
+        const std::vector<std::vector<uint8_t>>& images,
+        const std::vector<std::pair<int, int>>& image_sizes);
+    
+    std::future<std::vector<std::vector<PoseResult>>> infer_batch_async(
         const std::vector<std::vector<uint8_t>>& images,
         const std::vector<std::pair<int, int>>& image_sizes);
     
@@ -59,9 +65,8 @@ private:
     std::unordered_map<int, CudaGraphInstance> graph_pool_;
     std::vector<int> supported_batch_sizes_;
     
-    // 支持的batch大小，1~4 意味着识别批处理时，没有图会浪费。
-    // 如果是 {1,2,4} 那么传3张图时，会使用4张图的Graph，就会浪费1张图的显存
-    // 如果是 {1,2,3,4} 但是穿了5张图，就会回退到非 graph 模式
+    std::mutex infer_mutex_;
+    
     static constexpr int BATCH_SIZES[] = {1, 2, 3, 4};
 };
 

@@ -259,6 +259,18 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer_batch(
     return results;
 }
 
+std::future<std::vector<std::vector<PoseResult>>> YoloPoseDetectorGraph::infer_batch_async(
+    const std::vector<std::vector<uint8_t>>& images,
+    const std::vector<std::pair<int, int>>& image_sizes) {
+    
+    auto task = std::async(std::launch::async, [this, images, image_sizes]() {
+        std::lock_guard<std::mutex> lock(this->infer_mutex_);
+        return this->infer_batch(images, image_sizes);
+    });
+    
+    return task;
+}
+
 void YoloPoseDetectorGraph::benchmark(
     const std::vector<std::vector<uint8_t>>& images,
     int src_width,
