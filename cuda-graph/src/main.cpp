@@ -261,6 +261,68 @@ int main(int argc, char** argv) {
         CUDA_CHECK(cudaEventDestroy(stop));
     }
     
+    // Zero-Copy test
+    if (iterations > 0) {
+        std::cout << "\n=== Zero-Copy Test ===" << std::endl;
+        
+        // Register host memory for zero-copy access
+        size_t total_size = 0;
+        for (const auto& img : images) {
+            total_size += img.size();
+        }
+        
+        // Create a contiguous buffer for zero-copy test
+        std::vector<uint8_t> zero_copy_buffer(total_size);
+        size_t offset = 0;
+        for (const auto& img : images) {
+            memcpy(zero_copy_buffer.data() + offset, img.data(), img.size());
+            offset += img.size();
+        }
+        
+        // Register the memory for zero-copy
+        CUDA_CHECK(cudaHostRegister(zero_copy_buffer.data(), total_size, cudaHostRegisterMapped));
+        
+        // Get device pointer
+        void* d_zero_copy_ptr = nullptr;
+        CUDA_CHECK(cudaHostGetDevicePointer(&d_zero_copy_ptr, zero_copy_buffer.data(), 0));
+        
+        std::cout << "Host memory registered for zero-copy access" << std::endl;
+        std::cout << "Device pointer: " << d_zero_copy_ptr << std::endl;
+        
+        // Test zero-copy read performance
+        cudaEvent_t zc_start, zc_stop;
+        CUDA_CHECK(cudaEventCreate(&zc_start));
+        CUDA_CHECK(cudaEventCreate(&zc_stop));
+        
+        // Allocate a GPU buffer to copy to (simulating preprocessing)
+        void* d_test_buffer = nullptr;
+        CUDA_CHECK(cudaMalloc(&d_test_buffer, total_size));
+        
+        CUDA_CHECK(cudaEventRecord(zc_start, detector.get_stream()));
+        for (int i = 0; i < iterations; i++) {
+            // Simulate zero-copy access: GPU reads directly from host memory
+            CUDA_CHECK(cudaMemcpyAsync(d_test_buffer, d_zero_copy_ptr, total_size, 
+                                       cudaMemcpyDeviceToDevice, detector.get_stream()));
+            CUDA_CHECK(cudaStreamSynchronize(detector.get_stream()));
+        }
+        CUDA_CHECK(cudaEventRecord(zc_stop, detector.get_stream()));
+        CUDA_CHECK(cudaEventSynchronize(zc_stop));
+        
+        float zero_copy_time;
+        CUDA_CHECK(cudaEventElapsedTime(&zero_copy_time, zc_start, zc_stop));
+        
+        std::cout << "\n--- Zero-Copy vs H2D Comparison ---" << std::endl;
+        std::cout << "Data size: " << total_size / 1024.0 / 1024.0 << " MB" << std::endl;
+        std::cout << "Zero-Copy time: " << zero_copy_time / iterations << " ms/iter" << std::endl;
+        std::cout << "Note: Zero-Copy bypasses H2D transfer, GPU reads directly from host memory" << std::endl;
+        
+        // Cleanup
+        CUDA_CHECK(cudaFree(d_test_buffer));
+        CUDA_CHECK(cudaHostUnregister(zero_copy_buffer.data()));
+        CUDA_CHECK(cudaEventDestroy(zc_start));
+        CUDA_CHECK(cudaEventDestroy(zc_stop));
+    }
+    
     for (size_t i = 0; i < results.size(); i++) {
         std::cout << "\nDetection results for " << image_paths[i] << ":" << std::endl;
         for (size_t j = 0; j < results[i].size(); j++) {

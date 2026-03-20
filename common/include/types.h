@@ -34,6 +34,7 @@ struct InferConfig {
     int max_detections = MAX_DETECTIONS;
     int max_detections_to_copy = 15;
     bool use_fp16 = true;
+    bool use_zero_copy = false;
     std::string engine_path;
 };
 

@@ -105,4 +105,36 @@ private:
     cudaStream_t stream_;
 };
 
+class ZeroCopyMemory {
+public:
+    ZeroCopyMemory() : ptr_(nullptr), size_(0), device_ptr_(nullptr) {}
+    ~ZeroCopyMemory() { release(); }
+    
+    void* allocate(size_t size) {
+        release();
+        CUDA_CHECK(cudaHostAlloc(&ptr_, size, cudaHostAllocMapped));
+        size_ = size;
+        CUDA_CHECK(cudaHostGetDevicePointer(&device_ptr_, ptr_, 0));
+        return ptr_;
+    }
+    
+    void release() {
+        if (ptr_) {
+            cudaFreeHost(ptr_);
+            ptr_ = nullptr;
+            device_ptr_ = nullptr;
+            size_ = 0;
+        }
+    }
+    
+    void* host_ptr() const { return ptr_; }
+    void* device_ptr() const { return device_ptr_; }
+    size_t size() const { return size_; }
+    
+private:
+    void* ptr_;
+    size_t size_;
+    void* device_ptr_;
+};
+
 }

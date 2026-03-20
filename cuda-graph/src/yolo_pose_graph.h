@@ -69,6 +69,8 @@ public:
         int src_height,
         int iterations = 100);
     
+    cudaStream_t get_stream() const { return stream_->get(); }
+    
 private:
     bool allocate_buffers(int max_batch_size);
     bool build_cuda_graph(int batch_size);
