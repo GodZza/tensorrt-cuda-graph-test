@@ -7,7 +7,7 @@ namespace yolo {
 
 constexpr int NUM_KEYPOINTS = 17;
 constexpr int KEYPOINT_DIM = 3;
-constexpr int MAX_DETECTIONS = 100;
+constexpr int MAX_DETECTIONS = 25;
 
 struct BBox {
     float x1, y1, x2, y2;
@@ -32,6 +32,7 @@ struct InferConfig {
     float conf_threshold = 0.25f;
     float nms_threshold = 0.45f;
     int max_detections = MAX_DETECTIONS;
+    int max_detections_to_copy = 15;
     bool use_fp16 = true;
     std::string engine_path;
 };

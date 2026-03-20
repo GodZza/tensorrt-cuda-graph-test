@@ -16,6 +16,7 @@ void postprocess_gpu(
     float conf_threshold,
     float nms_threshold,
     int max_detections,
+    int max_detections_to_copy,
     cudaStream_t stream
 );
 

@@ -119,6 +119,7 @@ bool YoloPoseDetectorGraph::build_cuda_graph(int batch_size) {
         config_.conf_threshold,
         config_.nms_threshold,
         config_.max_detections,
+        config_.max_detections_to_copy,
         stream_->get());
     
     stream_->synchronize();
@@ -147,6 +148,7 @@ bool YoloPoseDetectorGraph::build_cuda_graph(int batch_size) {
         config_.conf_threshold,
         config_.nms_threshold,
         config_.max_detections,
+        config_.max_detections_to_copy,
         stream_->get());
     
     CUDA_CHECK(cudaStreamEndCapture(stream_->get(), &instance.graph));
@@ -231,24 +233,26 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer_batch(
             config_.conf_threshold,
             config_.nms_threshold,
             config_.max_detections,
+            config_.max_detections_to_copy,
             stream_->get());
     }
     
     CUDA_CHECK(cudaMemcpyAsync(h_num_detections_.data(), d_num_detections_.get(),
         actual_batch_size * sizeof(int), cudaMemcpyDeviceToHost, stream_->get()));
     
+    int max_copy = std::min(config_.max_detections_to_copy, config_.max_detections);
     CUDA_CHECK(cudaMemcpyAsync(h_results_.data(), d_results_.get(),
-        actual_batch_size * config_.max_detections * sizeof(PoseResult),
+        actual_batch_size * max_copy * sizeof(PoseResult),
         cudaMemcpyDeviceToHost, stream_->get()));
     
     stream_->synchronize();
     
     std::vector<std::vector<PoseResult>> results(actual_batch_size);
     for (int i = 0; i < actual_batch_size; i++) {
-        int num_det = h_num_detections_[i];
+        int num_det = std::min(h_num_detections_[i], max_copy);
         results[i].reserve(num_det);
         for (int j = 0; j < num_det; j++) {
-            results[i].push_back(h_results_[i * config_.max_detections + j]);
+            results[i].push_back(h_results_[i * max_copy + j]);
         }
     }
     
@@ -342,6 +346,7 @@ void YoloPoseDetectorGraph::benchmark(
                 config_.conf_threshold,
                 config_.nms_threshold,
                 config_.max_detections,
+                config_.max_detections_to_copy,
                 stream_->get());
         }
         

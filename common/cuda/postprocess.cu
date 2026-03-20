@@ -135,19 +135,21 @@ __global__ void gather_results_kernel(
     int* __restrict__ d_num_detections,
     int batch_size,
     int num_keypoints,
-    int max_detections) {
+    int max_detections,
+    int max_detections_to_copy) {
     
     int batch_idx = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (batch_idx >= batch_size) return;
     
     int num_keep = min(d_num_keep[batch_idx], max_detections);
+    num_keep = min(num_keep, max_detections_to_copy);
     d_num_detections[batch_idx] = num_keep;
     
     for (int i = 0; i < num_keep; i++) {
         int idx = d_keep_indices[batch_idx * c_max_detections + i];
         
-        PoseResult& result = d_results[batch_idx * max_detections + i];
+        PoseResult& result = d_results[batch_idx * max_detections_to_copy + i];
         
         result.bbox.x1 = d_boxes[(batch_idx * c_max_detections + idx) * 4 + 0];
         result.bbox.y1 = d_boxes[(batch_idx * c_max_detections + idx) * 4 + 1];
@@ -169,18 +171,19 @@ __global__ void scale_coords_kernel(
     int* __restrict__ d_num_detections,
     const ImageInfo* __restrict__ d_image_infos,
     int batch_size,
-    int max_detections) {
+    int max_detections,
+    int max_detections_to_copy) {
     
     int batch_idx = blockIdx.y;
     int det_idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    if (batch_idx >= batch_size || det_idx >= max_detections) return;
+    if (batch_idx >= batch_size || det_idx >= max_detections_to_copy) return;
     
     int num_det = d_num_detections[batch_idx];
     if (det_idx >= num_det) return;
     
     const ImageInfo& info = d_image_infos[batch_idx];
-    PoseResult& result = d_results[batch_idx * max_detections + det_idx];
+    PoseResult& result = d_results[batch_idx * max_detections_to_copy + det_idx];
     
     result.bbox.x1 = (result.bbox.x1 - info.pad_x) * info.scale_x;
     result.bbox.y1 = (result.bbox.y1 - info.pad_y) * info.scale_y;
@@ -190,6 +193,33 @@ __global__ void scale_coords_kernel(
     for (int k = 0; k < NUM_KEYPOINTS; k++) {
         result.keypoints[k].x = (result.keypoints[k].x - info.pad_x) * info.scale_x;
         result.keypoints[k].y = (result.keypoints[k].y - info.pad_y) * info.scale_y;
+    }
+}
+
+__global__ void sort_results_kernel(
+    PoseResult* __restrict__ d_results,
+    int* __restrict__ d_num_detections,
+    int batch_size,
+    int max_detections_to_copy) {
+    
+    int batch_idx = blockIdx.x;
+    if (batch_idx >= batch_size) return;
+    
+    int num_det = d_num_detections[batch_idx];
+    PoseResult* results = &d_results[batch_idx * max_detections_to_copy];
+    
+    for (int i = 0; i < num_det - 1; i++) {
+        int max_idx = i;
+        for (int j = i + 1; j < num_det; j++) {
+            if (results[j].bbox.conf > results[max_idx].bbox.conf) {
+                max_idx = j;
+            }
+        }
+        if (max_idx != i) {
+            PoseResult tmp = results[i];
+            results[i] = results[max_idx];
+            results[max_idx] = tmp;
+        }
     }
 }
 
@@ -228,6 +258,7 @@ void postprocess_gpu(
     float conf_threshold,
     float nms_threshold,
     int max_detections,
+    int max_detections_to_copy,
     cudaStream_t stream) {
     
     int num_preds = 8400;
@@ -258,14 +289,20 @@ void postprocess_gpu(
     gather_results_kernel<<<gather_grid, gather_block, 0, stream>>>(
         g_d_boxes, g_d_scores, g_d_class_ids, g_d_keypoints,
         g_d_keep_indices, g_d_num_keep, d_results, d_num_detections,
-        batch_size, NUM_KEYPOINTS, max_detections);
+        batch_size, NUM_KEYPOINTS, max_detections, max_detections_to_copy);
     
     dim3 scale_block(32);
-    dim3 scale_grid(div_up(max_detections, 32), batch_size);
+    dim3 scale_grid(div_up(max_detections_to_copy, 32), batch_size);
     
     scale_coords_kernel<<<scale_grid, scale_block, 0, stream>>>(
         d_results, d_num_detections, d_image_infos,
-        batch_size, max_detections);
+        batch_size, max_detections, max_detections_to_copy);
+    
+    dim3 sort_grid(batch_size);
+    dim3 sort_block(1);
+    
+    sort_results_kernel<<<sort_grid, sort_block, 0, stream>>>(
+        d_results, d_num_detections, batch_size, max_detections_to_copy);
 }
 
 }

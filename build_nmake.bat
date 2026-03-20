@@ -35,7 +35,7 @@ cmake -G "NMake Makefiles" ^
 
 if %ERRORLEVEL% neq 0 (
     echo CMake configuration failed!
-    pause
+    ::pause
     exit /b 1
 )
 
@@ -45,7 +45,7 @@ nmake
 
 if %ERRORLEVEL% neq 0 (
     echo Build failed!
-    pause
+    ::pause
     exit /b 1
 )
 

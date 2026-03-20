@@ -84,7 +84,8 @@ int main(int argc, char** argv) {
     config.max_batch_size = 16;
     config.conf_threshold = 0.25f;
     config.nms_threshold = 0.45f;
-    config.max_detections = 100;
+    //config.max_detections = 25;
+    //config.max_detections_to_copy = 15;
     config.use_fp16 = true;
     
     yolo::YoloPoseDetectorGraph detector;

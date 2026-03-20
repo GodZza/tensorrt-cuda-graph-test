@@ -96,6 +96,7 @@ std::vector<std::vector<PoseResult>> YoloPoseDetector::infer(
         config_.conf_threshold,
         config_.nms_threshold,
         config_.max_detections,
+        config_.max_detections,
         stream_->get());
     
     CUDA_CHECK(cudaMemcpyAsync(h_num_detections_.data(), d_num_detections_.get(),
@@ -207,6 +208,7 @@ void YoloPoseDetector::benchmark(
             static_cast<const ImageInfo*>(d_image_infos_.get()),
             config_.conf_threshold,
             config_.nms_threshold,
+            config_.max_detections,
             config_.max_detections,
             stream_->get());
         
