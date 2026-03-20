@@ -193,9 +193,29 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::infer_batch(
     }
     
     for (int i = 0; i < actual_batch_size; i++) {
-        h_image_infos_[i].src_width = image_sizes[i].first;
-        h_image_infos_[i].src_height = image_sizes[i].second;
+        int src_w = image_sizes[i].first;
+        int src_h = image_sizes[i].second;
+        
+        float scale = std::min(
+            static_cast<float>(config_.input_width) / src_w,
+            static_cast<float>(config_.input_height) / src_h
+        );
+        
+        int new_width = static_cast<int>(src_w * scale);
+        int new_height = static_cast<int>(src_h * scale);
+        
+        int pad_x = (config_.input_width - new_width) / 2;
+        int pad_y = (config_.input_height - new_height) / 2;
+        
+        h_image_infos_[i].src_width = src_w;
+        h_image_infos_[i].src_height = src_h;
         h_image_infos_[i].data_offset = image_offsets[i];
+        h_image_infos_[i].scale_x = 1.0f / scale;
+        h_image_infos_[i].scale_y = 1.0f / scale;
+        h_image_infos_[i].pad_x = pad_x;
+        h_image_infos_[i].pad_y = pad_y;
+        h_image_infos_[i].orig_width = src_w;
+        h_image_infos_[i].orig_height = src_h;
     }
     
     CUDA_CHECK(cudaMemcpyAsync(d_input_images_.get(), pinned_input_.get(),
