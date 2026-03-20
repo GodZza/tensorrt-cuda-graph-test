@@ -1,8 +1,9 @@
 #include "yolo_pose_graph.h"
 #include "../../common/include/preprocess.cuh"
 #include "../../common/include/postprocess.cuh"
-#include <iostream>
+#include <NvInfer.h>
 #include <algorithm>
+#include <iostream>
 
 namespace yolo {
 
@@ -277,12 +278,16 @@ std::shared_ptr<BufferHandle> YoloPoseDetectorGraph::create_buffer() {
     
     size_t max_image_size = config_.max_batch_size * config_.input_width * config_.input_height * 3;
     size_t max_results_size = config_.max_batch_size * config_.max_detections_to_copy * sizeof(PoseResult);
+    size_t input_tensor_size = config_.max_batch_size * engine_->get_input_size() * sizeof(float);
+    size_t output_tensor_size = config_.max_batch_size * engine_->get_output_size() * sizeof(float);
     
     buffer->pinned_input.allocate(max_image_size);
     buffer->d_input_images.allocate(max_image_size);
     buffer->d_image_infos.allocate(config_.max_batch_size * sizeof(ImageInfo));
     buffer->d_results.allocate(max_results_size);
     buffer->d_num_detections.allocate(config_.max_batch_size * sizeof(int));
+    buffer->d_input_tensor.allocate(input_tensor_size);
+    buffer->d_output_tensor.allocate(output_tensor_size);
     
     buffer->h_image_infos.resize(config_.max_batch_size);
     buffer->h_results.resize(config_.max_batch_size * config_.max_detections_to_copy);
@@ -290,6 +295,11 @@ std::shared_ptr<BufferHandle> YoloPoseDetectorGraph::create_buffer() {
     
     buffer->stream = std::make_unique<CudaStream>();
     buffer->in_use = false;
+    
+    buffer->context = engine_->get_engine()->createExecutionContext();
+    if (!buffer->context) {
+        std::cerr << "Failed to create execution context for buffer " << buffer->id << std::endl;
+    }
     
     return buffer;
 }
@@ -300,7 +310,6 @@ void YoloPoseDetectorGraph::prepare_async(
     std::shared_ptr<BufferHandle> buffer) {
     
     int actual_batch_size = static_cast<int>(images.size());
-    int graph_batch_size = get_graph_batch_size(actual_batch_size);
     
     size_t total_image_size = 0;
     std::vector<size_t> image_offsets(actual_batch_size);
@@ -328,16 +337,24 @@ void YoloPoseDetectorGraph::prepare_async(
     
     preprocess_gpu_with_infos(
         static_cast<const uint8_t*>(buffer->d_input_images.get()),
-        static_cast<float*>(engine_->get_input_buffer()),
+        static_cast<float*>(buffer->d_input_tensor.get()),
         actual_batch_size,
         config_.input_width, config_.input_height,
         static_cast<ImageInfo*>(buffer->d_image_infos.get()),
         buffer->stream->get());
     
-    engine_->enqueue_async(buffer->stream->get());
+    auto input_name = engine_->get_engine()->getIOTensorName(0);
+    auto output_name = engine_->get_engine()->getIOTensorName(1);
+    
+    buffer->context->setInputShape(input_name, 
+        nvinfer1::Dims4{actual_batch_size, 3, config_.input_width, config_.input_height});
+    buffer->context->setTensorAddress(input_name, buffer->d_input_tensor.get());
+    buffer->context->setTensorAddress(output_name, buffer->d_output_tensor.get());
+    
+    buffer->context->enqueueV3(buffer->stream->get());
     
     postprocess_gpu(
-        static_cast<const float*>(engine_->get_output_buffer()),
+        static_cast<const float*>(buffer->d_output_tensor.get()),
         static_cast<PoseResult*>(buffer->d_results.get()),
         static_cast<int*>(buffer->d_num_detections.get()),
         actual_batch_size,

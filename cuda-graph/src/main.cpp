@@ -194,6 +194,73 @@ int main(int argc, char** argv) {
     }
     std::cout << "Pipeline results match sync: " << (pipeline_match ? "YES" : "NO") << std::endl;
     
+    // Performance comparison: single vs double buffer
+    if (iterations > 0) {
+        std::cout << "\n=== Pipeline Performance Comparison ===" << std::endl;
+        std::cout << "Iterations: " << iterations << std::endl;
+        
+        cudaEvent_t start, stop;
+        CUDA_CHECK(cudaEventCreate(&start));
+        CUDA_CHECK(cudaEventCreate(&stop));
+        
+        // Single buffer (no pipeline)
+        std::cout << "\n--- Single Buffer (No Pipeline) ---" << std::endl;
+        auto single_buffer = detector.create_buffer();
+        
+        CUDA_CHECK(cudaEventRecord(start));
+        for (int i = 0; i < iterations; i++) {
+            detector.prepare_async(images, image_sizes, single_buffer);
+            detector.wait_and_get_results(single_buffer);
+        }
+        CUDA_CHECK(cudaEventRecord(stop));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        
+        float single_time;
+        CUDA_CHECK(cudaEventElapsedTime(&single_time, start, stop));
+        float single_fps = (iterations * images.size()) / (single_time / 1000.0f);
+        std::cout << "Total time: " << single_time << " ms" << std::endl;
+        std::cout << "Avg per frame: " << single_time / iterations << " ms" << std::endl;
+        std::cout << "Throughput: " << single_fps << " images/sec" << std::endl;
+        
+        // Double buffer (pipeline)
+        std::cout << "\n--- Double Buffer (Pipeline) ---" << std::endl;
+        
+        CUDA_CHECK(cudaEventRecord(start));
+        
+        // Frame 1: prepare to buffer_a
+        detector.prepare_async(images, image_sizes, buffer_a);
+        
+        for (int i = 1; i < iterations - 1; i++) {
+            auto& cur_buffer = (i % 2 == 0) ? buffer_a : buffer_b;
+            auto& prev_buffer = (i % 2 == 0) ? buffer_b : buffer_a;
+            
+            detector.prepare_async(images, image_sizes, cur_buffer);
+            detector.wait_and_get_results(prev_buffer);
+        }
+        
+        // Last frame
+        detector.wait_and_get_results((iterations % 2 == 0) ? buffer_a : buffer_b);
+        
+        CUDA_CHECK(cudaEventRecord(stop));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        
+        float double_time;
+        CUDA_CHECK(cudaEventElapsedTime(&double_time, start, stop));
+        float double_fps = (iterations * images.size()) / (double_time / 1000.0f);
+        std::cout << "Total time: " << double_time << " ms" << std::endl;
+        std::cout << "Avg per frame: " << double_time / iterations << " ms" << std::endl;
+        std::cout << "Throughput: " << double_fps << " images/sec" << std::endl;
+        
+        // Comparison
+        std::cout << "\n--- Comparison ---" << std::endl;
+        float speedup = single_time / double_time;
+        std::cout << "Speedup: " << speedup << "x" << std::endl;
+        std::cout << "Time saved: " << ((single_time - double_time) / single_time * 100) << "%" << std::endl;
+        
+        CUDA_CHECK(cudaEventDestroy(start));
+        CUDA_CHECK(cudaEventDestroy(stop));
+    }
+    
     for (size_t i = 0; i < results.size(); i++) {
         std::cout << "\nDetection results for " << image_paths[i] << ":" << std::endl;
         for (size_t j = 0; j < results[i].size(); j++) {

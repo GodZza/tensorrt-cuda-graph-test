@@ -24,6 +24,9 @@ struct BufferHandle {
     GpuMemory d_image_infos;
     GpuMemory d_results;
     GpuMemory d_num_detections;
+    GpuMemory d_input_tensor;
+    GpuMemory d_output_tensor;
+    nvinfer1::IExecutionContext* context = nullptr;
     std::vector<ImageInfo> h_image_infos;
     std::vector<PoseResult> h_results;
     std::vector<int> h_num_detections;
