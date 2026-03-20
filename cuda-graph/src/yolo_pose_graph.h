@@ -59,7 +59,10 @@ private:
     std::unordered_map<int, CudaGraphInstance> graph_pool_;
     std::vector<int> supported_batch_sizes_;
     
-    static constexpr int BATCH_SIZES[] = {1, 2, 4, 8, 16};
+    // 支持的batch大小，1~4 意味着识别批处理时，没有图会浪费。
+    // 如果是 {1,2,4} 那么传3张图时，会使用4张图的Graph，就会浪费1张图的显存
+    // 如果是 {1,2,3,4} 但是穿了5张图，就会回退到非 graph 模式
+    static constexpr int BATCH_SIZES[] = {1, 2, 3, 4};
 };
 
 }
