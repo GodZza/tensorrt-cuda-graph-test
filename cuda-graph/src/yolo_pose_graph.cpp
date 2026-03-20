@@ -70,11 +70,11 @@ bool YoloPoseDetectorGraph::allocate_buffers(int max_batch_size) {
     pinned_input_.allocate(input_image_size * sizeof(uint8_t));
     d_input_images_.allocate(input_image_size * sizeof(uint8_t));
     d_image_infos_.allocate(max_batch_size * sizeof(ImageInfo));
-    d_results_.allocate(max_batch_size * config_.max_detections * sizeof(PoseResult));
+    d_results_.allocate(max_batch_size * config_.max_detections_to_copy * sizeof(PoseResult));
     d_num_detections_.allocate(max_batch_size * sizeof(int));
     
     h_image_infos_.resize(max_batch_size);
-    h_results_.resize(max_batch_size * config_.max_detections);
+    h_results_.resize(max_batch_size * config_.max_detections_to_copy);
     h_num_detections_.resize(max_batch_size);
     
     return true;
@@ -310,6 +310,7 @@ void YoloPoseDetectorGraph::prepare_async(
     std::shared_ptr<BufferHandle> buffer) {
     
     int actual_batch_size = static_cast<int>(images.size());
+    buffer->actual_batch_size = actual_batch_size;
     
     size_t total_image_size = 0;
     std::vector<size_t> image_offsets(actual_batch_size);
@@ -353,20 +354,23 @@ void YoloPoseDetectorGraph::prepare_async(
     
     buffer->context->enqueueV3(buffer->stream->get());
     
-    postprocess_gpu(
-        static_cast<const float*>(buffer->d_output_tensor.get()),
-        static_cast<PoseResult*>(buffer->d_results.get()),
-        static_cast<int*>(buffer->d_num_detections.get()),
-        actual_batch_size,
-        engine_->get_output_size(),
-        config_.input_width,
-        config_.input_height,
-        static_cast<const ImageInfo*>(buffer->d_image_infos.get()),
-        config_.conf_threshold,
-        config_.nms_threshold,
-        config_.max_detections,
-        config_.max_detections_to_copy,
-        buffer->stream->get());
+    {
+        std::lock_guard<std::mutex> lock(infer_mutex_);
+        postprocess_gpu(
+            static_cast<const float*>(buffer->d_output_tensor.get()),
+            static_cast<PoseResult*>(buffer->d_results.get()),
+            static_cast<int*>(buffer->d_num_detections.get()),
+            actual_batch_size,
+            engine_->get_output_size(),
+            config_.input_width,
+            config_.input_height,
+            static_cast<const ImageInfo*>(buffer->d_image_infos.get()),
+            config_.conf_threshold,
+            config_.nms_threshold,
+            config_.max_detections,
+            config_.max_detections_to_copy,
+            buffer->stream->get());
+    }
     
     CUDA_CHECK(cudaMemcpyAsync(buffer->h_num_detections.data(), buffer->d_num_detections.get(),
         actual_batch_size * sizeof(int), cudaMemcpyDeviceToHost, buffer->stream->get()));
@@ -387,15 +391,14 @@ std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::wait_and_get_results
     int max_copy = std::min(config_.max_detections_to_copy, config_.max_detections);
     
     std::vector<std::vector<PoseResult>> results;
-    for (size_t i = 0; i < buffer->h_num_detections.size(); i++) {
+    for (int i = 0; i < buffer->actual_batch_size; i++) {
         int num_det = buffer->h_num_detections[i];
-        if (num_det > 0) {
-            std::vector<PoseResult> frame_results;
-            for (int j = 0; j < std::min(num_det, max_copy); j++) {
-                frame_results.push_back(buffer->h_results[i * max_copy + j]);
-            }
-            results.push_back(frame_results);
+        std::vector<PoseResult> frame_results;
+        frame_results.reserve(num_det);
+        for (int j = 0; j < std::min(num_det, max_copy); j++) {
+            frame_results.push_back(buffer->h_results[i * max_copy + j]);
         }
+        results.push_back(frame_results);
     }
     
     buffer->in_use = false;

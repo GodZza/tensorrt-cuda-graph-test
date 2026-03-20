@@ -19,6 +19,7 @@ struct CudaGraphInstance {
 
 struct BufferHandle {
     int id;
+    int actual_batch_size = 0;
     PinnedMemory pinned_input;
     GpuMemory d_input_images;
     GpuMemory d_image_infos;
