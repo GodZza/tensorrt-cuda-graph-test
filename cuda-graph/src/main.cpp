@@ -316,7 +316,57 @@ int main(int argc, char** argv) {
         std::cout << "Zero-Copy time: " << zero_copy_time / iterations << " ms/iter" << std::endl;
         std::cout << "Note: Zero-Copy bypasses H2D transfer, GPU reads directly from host memory" << std::endl;
         
+        // Unified Memory test
+        std::cout << "\n=== Unified Memory Test ===" << std::endl;
+        
+        // Allocate unified memory
+        void* unified_ptr = nullptr;
+        CUDA_CHECK(cudaMallocManaged(&unified_ptr, total_size));
+        
+        // Copy data to unified memory (from original images, not zero_copy_buffer)
+        size_t um_offset = 0;
+        for (const auto& img : images) {
+            memcpy((char*)unified_ptr + um_offset, img.data(), img.size());
+            um_offset += img.size();
+        }
+        
+        std::cout << "Unified memory allocated: " << total_size / 1024.0 / 1024.0 << " MB" << std::endl;
+        
+        cudaEvent_t um_start, um_stop;
+        CUDA_CHECK(cudaEventCreate(&um_start));
+        CUDA_CHECK(cudaEventCreate(&um_stop));
+        
+        // Allocate a GPU buffer for testing
+        void* d_um_buffer = nullptr;
+        CUDA_CHECK(cudaMalloc(&d_um_buffer, total_size));
+        
+        // Test 1: Without prefetch (automatic migration)
+        CUDA_CHECK(cudaEventRecord(um_start, detector.get_stream()));
+        for (int i = 0; i < iterations; i++) {
+            // GPU accesses unified memory directly (automatic migration)
+            CUDA_CHECK(cudaMemcpyAsync(d_um_buffer, unified_ptr, total_size, 
+                                       cudaMemcpyDeviceToDevice, detector.get_stream()));
+            CUDA_CHECK(cudaStreamSynchronize(detector.get_stream()));
+        }
+        CUDA_CHECK(cudaEventRecord(um_stop, detector.get_stream()));
+        CUDA_CHECK(cudaEventSynchronize(um_stop));
+        
+        float unified_time;
+        CUDA_CHECK(cudaEventElapsedTime(&unified_time, um_start, um_stop));
+        
+        std::cout << "\n--- Memory Transfer Comparison ---" << std::endl;
+        std::cout << "Data size: " << total_size / 1024.0 / 1024.0 << " MB" << std::endl;
+        std::cout << "Traditional H2D:  " << 0.52654 << " ms/iter (from benchmark)" << std::endl;
+        std::cout << "Zero-Copy:        " << zero_copy_time / iterations << " ms/iter" << std::endl;
+        std::cout << "Unified Memory:   " << unified_time / iterations << " ms/iter" << std::endl;
+        
         // Cleanup
+        CUDA_CHECK(cudaFree(d_um_buffer));
+        CUDA_CHECK(cudaFree(unified_ptr));
+        CUDA_CHECK(cudaEventDestroy(um_start));
+        CUDA_CHECK(cudaEventDestroy(um_stop));
+        
+        // Cleanup zero-copy
         CUDA_CHECK(cudaFree(d_test_buffer));
         CUDA_CHECK(cudaHostUnregister(zero_copy_buffer.data()));
         CUDA_CHECK(cudaEventDestroy(zc_start));

@@ -137,4 +137,40 @@ private:
     void* device_ptr_;
 };
 
+class UnifiedMemory {
+public:
+    UnifiedMemory() : ptr_(nullptr), size_(0) {}
+    ~UnifiedMemory() { release(); }
+    
+    void* allocate(size_t size) {
+        release();
+        CUDA_CHECK(cudaMallocManaged(&ptr_, size));
+        size_ = size;
+        return ptr_;
+    }
+    
+    void release() {
+        if (ptr_) {
+            cudaFree(ptr_);
+            ptr_ = nullptr;
+            size_ = 0;
+        }
+    }
+    
+    void* get() const { return ptr_; }
+    size_t size() const { return size_; }
+    
+    void prefetch_to_gpu(int device_id, cudaStream_t stream) {
+        CUDA_CHECK(cudaMemPrefetchAsync(ptr_, size_, device_id, stream));
+    }
+    
+    void prefetch_to_cpu(cudaStream_t stream) {
+        CUDA_CHECK(cudaMemPrefetchAsync(ptr_, size_, cudaCpuDeviceId, stream));
+    }
+    
+private:
+    void* ptr_;
+    size_t size_;
+};
+
 }
