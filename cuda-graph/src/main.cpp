@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cmath>
 
 void draw_results_on_image(
     std::vector<uint8_t>& img,
@@ -118,6 +119,35 @@ int main(int argc, char** argv) {
     }
     
     auto results = detector.infer_batch(images, image_sizes);
+    
+    std::cout << "\n=== Sync inference done ===" << std::endl;
+    
+    // Test async inference
+    std::cout << "\n=== Test async inference ===" << std::endl;
+    auto future = detector.infer_batch_async(images, image_sizes);
+    
+    // Can do other work while waiting
+    std::cout << "Async inference in progress... CPU can do other tasks" << std::endl;
+    
+    // Get async results
+    auto async_results = future.get();
+    std::cout << "Async inference done!" << std::endl;
+    
+    // Verify sync and async results match
+    bool results_match = true;
+    for (size_t i = 0; i < results.size(); i++) {
+        if (results[i].size() != async_results[i].size()) {
+            results_match = false;
+            break;
+        }
+        for (size_t j = 0; j < results[i].size(); j++) {
+            if (std::abs(results[i][j].bbox.conf - async_results[i][j].bbox.conf) > 0.001f) {
+                results_match = false;
+                break;
+            }
+        }
+    }
+    std::cout << "Sync/Async results match: " << (results_match ? "YES" : "NO") << std::endl;
     
     for (size_t i = 0; i < results.size(); i++) {
         std::cout << "\nDetection results for " << image_paths[i] << ":" << std::endl;
