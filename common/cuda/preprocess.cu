@@ -162,22 +162,35 @@ __global__ void preprocess_with_infos_kernel(
     int src_height = d_image_infos[batch_idx].src_height;
     size_t data_offset = d_image_infos[batch_idx].data_offset;
     
-    float inv_scale = d_image_infos[batch_idx].scale_x;
-    int pad_x = d_image_infos[batch_idx].pad_x;
-    int pad_y = d_image_infos[batch_idx].pad_y;
-    
-    int new_width = __float2int_rn(src_width / inv_scale);
-    int new_height = __float2int_rn(src_height / inv_scale);
-    
     const uint8_t* d_src = d_src_images + data_offset;
+    
+    float scale = min(
+        static_cast<float>(dst_width) / src_width,
+        static_cast<float>(dst_height) / src_height
+    );
+    
+    int new_width = __float2int_rn(src_width * scale);
+    int new_height = __float2int_rn(src_height * scale);
+    
+    int pad_x = (dst_width - new_width) / 2;
+    int pad_y = (dst_height - new_height) / 2;
+    
+    if (threadIdx.x == 0 && threadIdx.y == 0 && dx == 0 && dy == 0) {
+        d_image_infos[batch_idx].orig_width = src_width;
+        d_image_infos[batch_idx].orig_height = src_height;
+        d_image_infos[batch_idx].scale_x = 1.0f / scale;
+        d_image_infos[batch_idx].scale_y = 1.0f / scale;
+        d_image_infos[batch_idx].pad_x = pad_x;
+        d_image_infos[batch_idx].pad_y = pad_y;
+    }
     
     int dst_idx = batch_idx * dst_width * dst_height * 3;
     
     if (dx >= pad_x && dx < pad_x + new_width &&
         dy >= pad_y && dy < pad_y + new_height) {
         
-        float src_x = (dx - pad_x) * inv_scale;
-        float src_y = (dy - pad_y) * inv_scale;
+        float src_x = (dx - pad_x) / scale;
+        float src_y = (dy - pad_y) / scale;
         
         for (int c = 0; c < 3; c++) {
             float val = bilinear_interpolate(d_src, src_width, src_height, src_x, src_y, c);
