@@ -271,6 +271,120 @@ std::future<std::vector<std::vector<PoseResult>>> YoloPoseDetectorGraph::infer_b
     return task;
 }
 
+std::shared_ptr<BufferHandle> YoloPoseDetectorGraph::create_buffer() {
+    auto buffer = std::make_shared<BufferHandle>();
+    buffer->id = next_buffer_id_++;
+    
+    size_t max_image_size = config_.max_batch_size * config_.input_width * config_.input_height * 3;
+    size_t max_results_size = config_.max_batch_size * config_.max_detections_to_copy * sizeof(PoseResult);
+    
+    buffer->pinned_input.allocate(max_image_size);
+    buffer->d_input_images.allocate(max_image_size);
+    buffer->d_image_infos.allocate(config_.max_batch_size * sizeof(ImageInfo));
+    buffer->d_results.allocate(max_results_size);
+    buffer->d_num_detections.allocate(config_.max_batch_size * sizeof(int));
+    
+    buffer->h_image_infos.resize(config_.max_batch_size);
+    buffer->h_results.resize(config_.max_batch_size * config_.max_detections_to_copy);
+    buffer->h_num_detections.resize(config_.max_batch_size);
+    
+    buffer->stream = std::make_unique<CudaStream>();
+    buffer->in_use = false;
+    
+    return buffer;
+}
+
+void YoloPoseDetectorGraph::prepare_async(
+    const std::vector<std::vector<uint8_t>>& images,
+    const std::vector<std::pair<int, int>>& image_sizes,
+    std::shared_ptr<BufferHandle> buffer) {
+    
+    int actual_batch_size = static_cast<int>(images.size());
+    int graph_batch_size = get_graph_batch_size(actual_batch_size);
+    
+    size_t total_image_size = 0;
+    std::vector<size_t> image_offsets(actual_batch_size);
+    for (int i = 0; i < actual_batch_size; i++) {
+        image_offsets[i] = total_image_size;
+        total_image_size += images[i].size();
+    }
+    
+    uint8_t* pinned_ptr = static_cast<uint8_t*>(buffer->pinned_input.get());
+    for (int i = 0; i < actual_batch_size; i++) {
+        memcpy(pinned_ptr + image_offsets[i], images[i].data(), images[i].size());
+    }
+    
+    for (int i = 0; i < actual_batch_size; i++) {
+        buffer->h_image_infos[i].src_width = image_sizes[i].first;
+        buffer->h_image_infos[i].src_height = image_sizes[i].second;
+        buffer->h_image_infos[i].data_offset = image_offsets[i];
+    }
+    
+    CUDA_CHECK(cudaMemcpyAsync(buffer->d_input_images.get(), buffer->pinned_input.get(),
+        total_image_size, cudaMemcpyHostToDevice, buffer->stream->get()));
+    
+    CUDA_CHECK(cudaMemcpyAsync(buffer->d_image_infos.get(), buffer->h_image_infos.data(),
+        actual_batch_size * sizeof(ImageInfo), cudaMemcpyHostToDevice, buffer->stream->get()));
+    
+    preprocess_gpu_with_infos(
+        static_cast<const uint8_t*>(buffer->d_input_images.get()),
+        static_cast<float*>(engine_->get_input_buffer()),
+        actual_batch_size,
+        config_.input_width, config_.input_height,
+        static_cast<ImageInfo*>(buffer->d_image_infos.get()),
+        buffer->stream->get());
+    
+    engine_->enqueue_async(buffer->stream->get());
+    
+    postprocess_gpu(
+        static_cast<const float*>(engine_->get_output_buffer()),
+        static_cast<PoseResult*>(buffer->d_results.get()),
+        static_cast<int*>(buffer->d_num_detections.get()),
+        actual_batch_size,
+        engine_->get_output_size(),
+        config_.input_width,
+        config_.input_height,
+        static_cast<const ImageInfo*>(buffer->d_image_infos.get()),
+        config_.conf_threshold,
+        config_.nms_threshold,
+        config_.max_detections,
+        config_.max_detections_to_copy,
+        buffer->stream->get());
+    
+    CUDA_CHECK(cudaMemcpyAsync(buffer->h_num_detections.data(), buffer->d_num_detections.get(),
+        actual_batch_size * sizeof(int), cudaMemcpyDeviceToHost, buffer->stream->get()));
+    
+    int max_copy = std::min(config_.max_detections_to_copy, config_.max_detections);
+    CUDA_CHECK(cudaMemcpyAsync(buffer->h_results.data(), buffer->d_results.get(),
+        actual_batch_size * max_copy * sizeof(PoseResult),
+        cudaMemcpyDeviceToHost, buffer->stream->get()));
+    
+    buffer->in_use = true;
+}
+
+std::vector<std::vector<PoseResult>> YoloPoseDetectorGraph::wait_and_get_results(
+    std::shared_ptr<BufferHandle> buffer) {
+    
+    buffer->stream->synchronize();
+    
+    int max_copy = std::min(config_.max_detections_to_copy, config_.max_detections);
+    
+    std::vector<std::vector<PoseResult>> results;
+    for (size_t i = 0; i < buffer->h_num_detections.size(); i++) {
+        int num_det = buffer->h_num_detections[i];
+        if (num_det > 0) {
+            std::vector<PoseResult> frame_results;
+            for (int j = 0; j < std::min(num_det, max_copy); j++) {
+                frame_results.push_back(buffer->h_results[i * max_copy + j]);
+            }
+            results.push_back(frame_results);
+        }
+    }
+    
+    buffer->in_use = false;
+    return results;
+}
+
 void YoloPoseDetectorGraph::benchmark(
     const std::vector<std::vector<uint8_t>>& images,
     int src_width,

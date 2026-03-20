@@ -17,6 +17,20 @@ struct CudaGraphInstance {
     bool initialized = false;
 };
 
+struct BufferHandle {
+    int id;
+    PinnedMemory pinned_input;
+    GpuMemory d_input_images;
+    GpuMemory d_image_infos;
+    GpuMemory d_results;
+    GpuMemory d_num_detections;
+    std::vector<ImageInfo> h_image_infos;
+    std::vector<PoseResult> h_results;
+    std::vector<int> h_num_detections;
+    std::unique_ptr<CudaStream> stream;
+    bool in_use = false;
+};
+
 class YoloPoseDetectorGraph {
 public:
     YoloPoseDetectorGraph();
@@ -36,6 +50,15 @@ public:
     std::future<std::vector<std::vector<PoseResult>>> infer_batch_async(
         const std::vector<std::vector<uint8_t>>& images,
         const std::vector<std::pair<int, int>>& image_sizes);
+    
+    // Pipeline API
+    std::shared_ptr<BufferHandle> create_buffer();
+    void prepare_async(
+        const std::vector<std::vector<uint8_t>>& images,
+        const std::vector<std::pair<int, int>>& image_sizes,
+        std::shared_ptr<BufferHandle> buffer);
+    std::vector<std::vector<PoseResult>> wait_and_get_results(
+        std::shared_ptr<BufferHandle> buffer);
     
     void benchmark(
         const std::vector<std::vector<uint8_t>>& images,
@@ -66,6 +89,7 @@ private:
     std::vector<int> supported_batch_sizes_;
     
     std::mutex infer_mutex_;
+    int next_buffer_id_ = 0;
     
     static constexpr int BATCH_SIZES[] = {1, 2, 3, 4};
 };

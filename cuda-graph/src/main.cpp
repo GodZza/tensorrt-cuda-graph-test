@@ -149,6 +149,51 @@ int main(int argc, char** argv) {
     }
     std::cout << "Sync/Async results match: " << (results_match ? "YES" : "NO") << std::endl;
     
+    // Test double-buffer pipeline
+    std::cout << "\n=== Test Double-Buffer Pipeline ===" << std::endl;
+    
+    auto buffer_a = detector.create_buffer();
+    auto buffer_b = detector.create_buffer();
+    
+    std::vector<std::vector<std::vector<yolo::PoseResult>>> pipeline_results;
+    
+    // Frame 1: prepare to buffer_a
+    detector.prepare_async(images, image_sizes, buffer_a);
+    
+    // Frame 2: prepare to buffer_b, wait for buffer_a
+    detector.prepare_async(images, image_sizes, buffer_b);
+    auto results_a = detector.wait_and_get_results(buffer_a);
+    pipeline_results.push_back(results_a);
+    
+    // Frame 3: prepare to buffer_a, wait for buffer_b
+    detector.prepare_async(images, image_sizes, buffer_a);
+    auto results_b = detector.wait_and_get_results(buffer_b);
+    pipeline_results.push_back(results_b);
+    
+    // Get last result
+    auto results_a2 = detector.wait_and_get_results(buffer_a);
+    pipeline_results.push_back(results_a2);
+    
+    std::cout << "Pipeline completed! Processed " << pipeline_results.size() << " frames" << std::endl;
+    
+    // Verify pipeline results match sync results
+    bool pipeline_match = true;
+    for (size_t f = 0; f < pipeline_results.size(); f++) {
+        for (size_t i = 0; i < results.size(); i++) {
+            if (pipeline_results[f][i].size() != results[i].size()) {
+                pipeline_match = false;
+                break;
+            }
+            for (size_t j = 0; j < results[i].size(); j++) {
+                if (std::abs(pipeline_results[f][i][j].bbox.conf - results[i][j].bbox.conf) > 0.001f) {
+                    pipeline_match = false;
+                    break;
+                }
+            }
+        }
+    }
+    std::cout << "Pipeline results match sync: " << (pipeline_match ? "YES" : "NO") << std::endl;
+    
     for (size_t i = 0; i < results.size(); i++) {
         std::cout << "\nDetection results for " << image_paths[i] << ":" << std::endl;
         for (size_t j = 0; j < results[i].size(); j++) {
